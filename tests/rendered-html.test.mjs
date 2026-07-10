@@ -1,0 +1,44 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+async function render() {
+  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
+  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
+  const { default: worker } = await import(workerUrl.href);
+
+  return worker.fetch(
+    new Request("http://localhost/", { headers: { accept: "text/html" } }),
+    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+    { waitUntil() {}, passThroughOnException() {} },
+  );
+}
+
+test("server-renders the CCER research dashboard shell", async () => {
+  const response = await render();
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
+
+  const html = await response.text();
+  assert.match(html, /<title>全国 CCER 市场研究观测站<\/title>/);
+  assert.match(html, /全国 CCER 交易、项目开发/);
+  assert.match(html, /http:\/\/localhost:3000\/og\.png/);
+  assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
+});
+
+test("ships a complete and internally consistent dashboard dataset", async () => {
+  const payload = JSON.parse(await readFile(new URL("../public/data/dashboard.json", import.meta.url), "utf8"));
+  const map = JSON.parse(await readFile(new URL("../public/china.json", import.meta.url), "utf8"));
+
+  assert.equal(payload.trades.length, payload.quality.tradeRecords);
+  assert.equal(payload.projects.length, payload.quality.projectRecords);
+  assert.equal(payload.trades.at(-1).date, payload.dataThrough);
+  assert.equal(payload.methodologies.length, 9);
+  assert.equal(map.features.length, 35);
+  assert.ok(payload.projects.every((row) => row.projectName && row.categoryCode && row.detailUrl));
+
+  const actualReduction = payload.projects
+    .filter((row) => row.categoryCode === "4")
+    .reduce((total, row) => total + row.actualReduction, 0);
+  assert.equal(actualReduction, 21_775_733);
+});
