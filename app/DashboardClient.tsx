@@ -1,7 +1,7 @@
 "use client";
 
 import type { EChartsOption } from "echarts";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { EChart, echarts } from "./components/EChart";
 
@@ -25,6 +25,11 @@ type Project = {
   projectName: string;
   projectCode: string;
   registrationDate: string;
+  creditingStart: string;
+  creditingEnd: string;
+  projectLifetimeYears: number;
+  accountingPeriodStart: string;
+  accountingPeriodEnd: string;
   detailUrl: string;
   province: string;
   longitude: number | null;
@@ -39,6 +44,9 @@ type Project = {
   certifiedNum: number;
   actualReduction: number;
   reductionYears: number;
+  reductionYearLabels: string[];
+  reductionRegistrationDate: string;
+  reductionRegistrationLabel: string;
   actualAnnualAverage: number;
   expectedAnnualAchievementRate: number | null;
 };
@@ -154,7 +162,44 @@ const STATUS_COLORS: Record<string, string> = {
   "6": "#687078",
 };
 
-const OWNER_PAGE_SIZE = 20;
+const OWNER_PAGE_SIZE = 10;
+
+const INSTITUTION_QUALIFICATIONS = [
+  { name: "中国质量认证中心有限公司", field: "能源产业（可再生/不可再生）", approval: "CNCA-R-2002-001", batch: "第一批" },
+  { name: "中国船级社质量认证有限公司", field: "能源产业（可再生/不可再生）", approval: "CNCA-R-2002-005", batch: "第一批" },
+  { name: "广州赛宝认证中心服务有限公司", field: "能源产业（可再生/不可再生）", approval: "CNCA-R-2002-012", batch: "第一批" },
+  { name: "中环联合（北京）认证中心有限公司", field: "能源产业（可再生/不可再生）", approval: "CNCA-R-2002-105", batch: "第一批" },
+  { name: "中国质量认证中心有限公司", field: "林业和其他碳汇类型", approval: "CNCA-R-2002-001", batch: "第一批" },
+  { name: "中国船级社质量认证有限公司", field: "林业和其他碳汇类型", approval: "CNCA-R-2002-005", batch: "第一批" },
+  { name: "广州赛宝认证中心服务有限公司", field: "林业和其他碳汇类型", approval: "CNCA-R-2002-012", batch: "第一批" },
+  { name: "中环联合（北京）认证中心有限公司", field: "林业和其他碳汇类型", approval: "CNCA-R-2002-105", batch: "第一批" },
+  { name: "中国林业科学研究院林业科技信息研究所", field: "林业和其他碳汇类型", approval: "CNCA-R-2024-1364", batch: "第一批" },
+  { name: "方圆标志认证集团有限公司", field: "能源产业（可再生/不可再生资源）", approval: "CNCA-R-2002-002", batch: "第二批" },
+  { name: "北京鉴衡认证中心有限公司", field: "能源产业（可再生/不可再生资源）", approval: "CNCA-R-2003-091", batch: "第二批" },
+  { name: "中国质量认证中心有限公司", field: "燃料（固体、石油和天然气）的逸散性排放", approval: "CNCA-R-2002-001", batch: "第二批" },
+  { name: "方圆标志认证集团有限公司", field: "燃料（固体、石油和天然气）的逸散性排放", approval: "CNCA-R-2002-002", batch: "第二批" },
+  { name: "中国船级社质量认证有限公司", field: "燃料（固体、石油和天然气）的逸散性排放", approval: "CNCA-R-2002-005", batch: "第二批" },
+  { name: "广州赛宝认证中心服务有限公司", field: "燃料（固体、石油和天然气）的逸散性排放", approval: "CNCA-R-2002-012", batch: "第二批" },
+  { name: "华夏认证中心有限公司", field: "燃料（固体、石油和天然气）的逸散性排放", approval: "CNCA-R-2002-021", batch: "第二批" },
+  { name: "中环联合（北京）认证中心有限公司", field: "燃料（固体、石油和天然气）的逸散性排放", approval: "CNCA-R-2002-105", batch: "第二批" },
+  { name: "北京鉴衡认证中心有限公司", field: "燃料（固体、石油和天然气）的逸散性排放", approval: "CNCA-R-2003-091", batch: "第二批" },
+  { name: "中国质量认证中心有限公司", field: "交通运输业、能源需求", approval: "CNCA-R-2002-001", batch: "第二批" },
+  { name: "方圆标志认证集团有限公司", field: "交通运输业、能源需求", approval: "CNCA-R-2002-002", batch: "第二批" },
+  { name: "中国船级社质量认证有限公司", field: "交通运输业、能源需求", approval: "CNCA-R-2002-005", batch: "第二批" },
+  { name: "广州赛宝认证中心服务有限公司", field: "交通运输业、能源需求", approval: "CNCA-R-2002-012", batch: "第二批" },
+  { name: "中环联合（北京）认证中心有限公司", field: "交通运输业、能源需求", approval: "CNCA-R-2002-105", batch: "第二批" },
+];
+
+const QUALIFICATION_SOURCES = [
+  {
+    label: "国家认监委2024年第11号公告《国家认监委关于发布第一批温室气体自愿减排项目审定与减排量核查机构资质审批决定的公告》",
+    url: "https://www.cnca.gov.cn/zwxx/gg/2024/art/2024/art_82acd2a2836e4e7ca2be267222282d5b.html",
+  },
+  {
+    label: "国家认监委2025年第21号公告《国家认监委关于发布第二批温室气体自愿减排项目审定与减排量核查机构资质审批决定的公告》",
+    url: "https://www.cnca.gov.cn/zwxx/gg/2025/art/2025/art_4f9bb3b280ac4afe8a2beb86099fb88b.html",
+  },
+];
 
 const compactNumber = (value: number, digits = 1) => {
   const absolute = Math.abs(value);
@@ -396,6 +441,112 @@ function StatusFilterBar({
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+function DownloadDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [name, setName] = useState("");
+  const [occupation, setOccupation] = useState("");
+  const [organization, setOrganization] = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [status, setStatus] = useState<"idle" | "submitting" | "ready" | "error">("idle");
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setStatus("submitting");
+    setMessage("");
+    try {
+      const response = await fetch("/api/download-request", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, occupation, organization, purpose }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "提交失败，请稍后重试。" );
+      setStatus("ready");
+    } catch (reason) {
+      setStatus("error");
+      setMessage(reason instanceof Error ? reason.message : "提交失败，请稍后重试。" );
+    }
+  };
+
+  return (
+    <div className="download-layer" role="presentation" onMouseDown={onClose}>
+      <section className="download-dialog" role="dialog" aria-modal="true" aria-labelledby="download-title" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="download-dialog-head">
+          <div>
+            <div className="eyebrow">DATA DOWNLOAD</div>
+            <h2 id="download-title">下载 CCER 汇总数据</h2>
+            <p>请填写基本信息。提交后即可下载当前数据快照的 Excel 工作簿。</p>
+          </div>
+          <button type="button" className="close-button" onClick={onClose}>关闭</button>
+        </div>
+        {status === "ready" ? (
+          <div className="download-ready">
+            <strong>信息已提交</strong>
+            <p>文件包含交易数据、项目详情、减排量明细及相关数据字典。</p>
+            <a className="download-primary" href="/downloads/ccer-national-market-data-20260710.xlsx" download="CCER全国市场数据汇总_20260710.xlsx">
+              下载 Excel
+            </a>
+          </div>
+        ) : (
+          <form className="download-form" onSubmit={submit}>
+            <label>
+              <span>姓名</span>
+              <input type="text" value={name} onChange={(event) => setName(event.target.value)} required maxLength={80} />
+            </label>
+            <label>
+              <span>职业</span>
+              <select value={occupation} onChange={(event) => setOccupation(event.target.value)} required>
+                <option value="">请选择</option>
+                <option value="科研与教育">科研与教育</option>
+                <option value="政府与事业单位">政府与事业单位</option>
+                <option value="企业管理与碳资产">企业管理与碳资产</option>
+                <option value="金融与投资">金融与投资</option>
+                <option value="咨询与专业服务">咨询与专业服务</option>
+                <option value="媒体与公共传播">媒体与公共传播</option>
+                <option value="学生">学生</option>
+                <option value="其他">其他</option>
+              </select>
+            </label>
+            <label>
+              <span>单位</span>
+              <input type="text" value={organization} onChange={(event) => setOrganization(event.target.value)} required maxLength={160} />
+            </label>
+            <label>
+              <span>用途</span>
+              <select value={purpose} onChange={(event) => setPurpose(event.target.value)} required>
+                <option value="">请选择</option>
+                <option value="学术研究">学术研究</option>
+                <option value="政策研究">政策研究</option>
+                <option value="市场分析">市场分析</option>
+                <option value="项目开发与管理">项目开发与管理</option>
+                <option value="投资决策">投资决策</option>
+                <option value="教学与培训">教学与培训</option>
+                <option value="新闻传播">新闻传播</option>
+                <option value="其他">其他</option>
+              </select>
+            </label>
+            {message ? <p className="form-error" role="alert">{message}</p> : null}
+            <button className="download-primary" type="submit" disabled={status === "submitting"}>
+              {status === "submitting" ? "正在提交…" : "提交并解锁下载"}
+            </button>
+          </form>
+        )}
+      </section>
     </div>
   );
 }
@@ -754,6 +905,7 @@ export default function DashboardClient() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState("");
   const [drawer, setDrawer] = useState<DrawerState | null>(null);
+  const [downloadOpen, setDownloadOpen] = useState(false);
   const [methodStatusFilter, setMethodStatusFilter] = useState<Set<string>>(new Set(["1", "1-1", "2", "3", "3-1", "4"]));
   const [ownerMethodFilter, setOwnerMethodFilter] = useState<Set<string>>(new Set());
   const [ownerSearch, setOwnerSearch] = useState("");
@@ -818,6 +970,33 @@ export default function DashboardClient() {
       items: [],
       groups: groupProjectsByMethodology(rows, buildMeta),
       tableColumns,
+    });
+  };
+
+  const openProjectTable = (
+    title: string,
+    groupTitle: string,
+    rows: Project[],
+    tableColumns: string[],
+    buildMeta: (project: Project) => DrawerItem["meta"],
+    description: string,
+  ) => {
+    setDrawer({
+      eyebrow: "PROJECT RECORDS",
+      title,
+      description,
+      items: [],
+      tableColumns,
+      groups: [
+        {
+          title: groupTitle,
+          items: rows.map((project) => ({
+            title: project.projectName,
+            href: project.detailUrl,
+            meta: buildMeta(project),
+          })),
+        },
+      ],
     });
   };
 
@@ -1062,27 +1241,66 @@ export default function DashboardClient() {
     ],
   }), [methodExpectedData]);
 
+  const reductionTotals = useMemo(() => {
+    if (!data) return [];
+    return data.methodologies
+      .map((methodology) => {
+        const rows = registeredReductionProjects
+          .filter((row) => row.methodology === methodology)
+          .sort((a, b) => b.actualReduction - a.actualReduction || a.projectName.localeCompare(b.projectName, "zh-CN"));
+        return { methodology, rows, actualReduction: sum(rows, "actualReduction") };
+      })
+      .sort((a, b) => b.actualReduction - a.actualReduction || a.methodology.localeCompare(b.methodology, "zh-CN"));
+  }, [data, registeredReductionProjects]);
+
+  const reductionTotalOption = useMemo<EChartsOption>(() => ({
+    grid: { left: 72, right: 24, top: 28, bottom: 112 },
+    tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (value) => `${exactNumber(Number(value || 0), 0)} 吨` },
+    xAxis: {
+      type: "category",
+      data: reductionTotals.map((row) => row.methodology),
+      axisLabel: { interval: 0, rotate: 34, color: "#596966", fontSize: 10 },
+      axisLine: { lineStyle: { color: "#aab9b6" } },
+    },
+    yAxis: {
+      type: "value",
+      name: "累计登记减排量（吨）",
+      nameTextStyle: { color: "#596966" },
+      axisLabel: { formatter: (value: number) => compactNumber(value, 0), color: "#596966" },
+      splitLine: { lineStyle: { color: "#e7edeb" } },
+    },
+    series: [{
+      name: "累计登记减排量",
+      type: "bar",
+      data: reductionTotals.map((row) => row.actualReduction),
+      barMaxWidth: 34,
+      itemStyle: { color: "#1f5f8b" },
+      label: { show: true, position: "top", color: "#31403d", formatter: (params: { value?: unknown }) => compactNumber(Number(params.value || 0), 0) },
+    }],
+  }), [reductionTotals]);
+
   const reductionComparison = useMemo(() => {
     if (!data) return [];
     return data.methodologies.map((methodology) => {
       const rows = registeredReductionProjects.filter((row) => row.methodology === methodology);
       const actualAnnualAverage = rows.reduce((total, row) => total + row.actualAnnualAverage, 0);
       const expectedAnnual = sum(rows, "expectedAnnual");
+      const totalActualReduction = sum(rows, "actualReduction");
       return {
         methodology,
-        rows,
-        actualReduction: sum(rows, "actualReduction"),
+        rows: rows.sort((a, b) => b.actualReduction - a.actualReduction || a.projectName.localeCompare(b.projectName, "zh-CN")),
+        averageActualReduction: rows.length > 0 ? totalActualReduction / rows.length : 0,
         actualAnnualAverage,
         expectedAnnual,
         achievementRate: expectedAnnual > 0 ? actualAnnualAverage / expectedAnnual : 0,
       };
-    }).sort((a, b) => b.actualReduction - a.actualReduction || a.methodology.localeCompare(b.methodology, "zh-CN"));
+    }).sort((a, b) => b.averageActualReduction - a.averageActualReduction || a.methodology.localeCompare(b.methodology, "zh-CN"));
   }, [data, registeredReductionProjects]);
 
   const reductionComparisonOption = useMemo<EChartsOption>(() => ({
     color: ["#147d70", "#9b4d5b"],
-    grid: { left: 74, right: 76, top: 58, bottom: 118 },
-    legend: { top: 0, data: ["实际登记减排量", "预计年均减排量达成率"], textStyle: { color: "#475754" } },
+    grid: { left: 74, right: 76, top: 58, bottom: 112 },
+    legend: { top: 0, data: ["平均单个项目实际登记减排量", "预计年均减排量达成率"], textStyle: { color: "#475754", fontSize: 10 } },
     tooltip: {
       trigger: "axis",
       axisPointer: { type: "cross" },
@@ -1092,7 +1310,7 @@ export default function DashboardClient() {
         if (!summary) return "";
         return [
           `<strong>${summary.methodology}</strong>`,
-          `实际登记减排量：${exactNumber(summary.actualReduction, 0)} 吨`,
+          `平均单个项目实际登记减排量：${exactNumber(summary.averageActualReduction, 0)} 吨`,
           `实际登记年均减排量：${exactNumber(summary.actualAnnualAverage, 0)} 吨/年`,
           `预计年均减排量：${exactNumber(summary.expectedAnnual, 0)} 吨/年`,
           `预计年均减排量达成率：${(summary.achievementRate * 100).toFixed(1)}%`,
@@ -1108,7 +1326,7 @@ export default function DashboardClient() {
     yAxis: [
       {
         type: "value",
-        name: "实际登记减排量（吨）",
+        name: "平均单项目减排量（吨）",
         nameTextStyle: { color: "#596966" },
         axisLabel: { formatter: (value: number) => compactNumber(value, 0), color: "#596966" },
         splitLine: { lineStyle: { color: "#e7edeb" } },
@@ -1123,9 +1341,9 @@ export default function DashboardClient() {
     ],
     series: [
       {
-        name: "实际登记减排量",
+        name: "平均单个项目实际登记减排量",
         type: "bar",
-        data: reductionComparison.map((row) => row.actualReduction),
+        data: reductionComparison.map((row) => Number(row.averageActualReduction.toFixed(2))),
         barMaxWidth: 38,
         itemStyle: { color: "#147d70" },
       },
@@ -1140,6 +1358,74 @@ export default function DashboardClient() {
       },
     ],
   }), [reductionComparison]);
+
+  const projectRegistrationTimeline = useMemo(() => {
+    const grouped = new Map<string, Project[]>();
+    for (const row of registeredProjects) {
+      if (!row.registrationDate) continue;
+      if (!grouped.has(row.registrationDate)) grouped.set(row.registrationDate, []);
+      grouped.get(row.registrationDate)?.push(row);
+    }
+    return [...grouped.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, rows]) => ({ date, rows, count: rows.length, expectedAnnual: sum(rows, "expectedAnnual") }));
+  }, [registeredProjects]);
+
+  const projectRegistrationOption = useMemo<EChartsOption>(() => ({
+    color: ["#147d70", "#1f5f8b"],
+    grid: { left: 62, right: 72, top: 52, bottom: 86 },
+    legend: { top: 0, data: ["当日登记项目数量", "预计年均减排量合计"], textStyle: { color: "#475754", fontSize: 10 } },
+    tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
+    dataZoom: projectRegistrationTimeline.length > 18 ? [{ type: "inside", start: 40, end: 100 }, { type: "slider", start: 40, end: 100, height: 20, bottom: 14 }] : [],
+    xAxis: {
+      type: "category",
+      data: projectRegistrationTimeline.map((row) => row.date),
+      axisLabel: { rotate: 36, color: "#596966", fontSize: 10 },
+      axisLine: { lineStyle: { color: "#aab9b6" } },
+    },
+    yAxis: [
+      { type: "value", name: "项目数量（个）", minInterval: 1, splitLine: { lineStyle: { color: "#e7edeb" } }, axisLabel: { color: "#596966" } },
+      { type: "value", name: "预计年均减排量（吨/年）", splitLine: { show: false }, axisLabel: { formatter: (value: number) => compactNumber(value, 0), color: "#596966" } },
+    ],
+    series: [
+      { name: "当日登记项目数量", type: "bar", data: projectRegistrationTimeline.map((row) => row.count), barMaxWidth: 24, itemStyle: { color: "#147d70" }, label: { show: true, position: "top", color: "#31403d" } },
+      { name: "预计年均减排量合计", type: "bar", yAxisIndex: 1, data: projectRegistrationTimeline.map((row) => row.expectedAnnual), barMaxWidth: 24, itemStyle: { color: "#1f5f8b" } },
+    ],
+  }), [projectRegistrationTimeline]);
+
+  const reductionRegistrationTimeline = useMemo(() => {
+    const grouped = new Map<string, Project[]>();
+    for (const row of registeredReductionProjects) {
+      const key = row.reductionRegistrationDate || "before-2026-07-11";
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key)?.push(row);
+    }
+    return [...grouped.entries()]
+      .sort((a, b) => a[0] === "before-2026-07-11" ? -1 : b[0] === "before-2026-07-11" ? 1 : a[0].localeCompare(b[0]))
+      .map(([date, rows]) => ({
+        date,
+        label: date === "before-2026-07-11" ? "2026-07-11 前" : date,
+        rows: rows.sort((a, b) => b.actualReduction - a.actualReduction),
+        count: rows.length,
+        actualReduction: sum(rows, "actualReduction"),
+      }));
+  }, [registeredReductionProjects]);
+
+  const reductionRegistrationOption = useMemo<EChartsOption>(() => ({
+    grid: { left: 60, right: 24, top: 24, bottom: 72 },
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "shadow" },
+      formatter: (raw: unknown) => {
+        const params = (Array.isArray(raw) ? raw : [raw]) as Array<{ axisValue?: string }>;
+        const row = reductionRegistrationTimeline.find((item) => item.label === params[0]?.axisValue);
+        return row ? `<strong>${row.label}</strong><br/>登记记录：${row.count} 条<br/>登记减排量：${exactNumber(row.actualReduction, 0)} 吨` : "";
+      },
+    },
+    xAxis: { type: "category", data: reductionRegistrationTimeline.map((row) => row.label), axisLabel: { rotate: 24, color: "#596966", fontSize: 10 }, axisLine: { lineStyle: { color: "#aab9b6" } } },
+    yAxis: { type: "value", name: "登记记录（条）", minInterval: 1, splitLine: { lineStyle: { color: "#e7edeb" } }, axisLabel: { color: "#596966" } },
+    series: [{ name: "减排量登记记录", type: "bar", data: reductionRegistrationTimeline.map((row) => row.count), barMaxWidth: 34, itemStyle: { color: "#9b4d5b" }, label: { show: true, position: "top", color: "#31403d" } }],
+  }), [reductionRegistrationTimeline]);
 
   const ownerRows = useMemo<OwnerRow[]>(() => {
     if (!data) return [];
@@ -1327,6 +1613,7 @@ export default function DashboardClient() {
           <a href="#owners">项目业主</a>
           <a href="#institutions">审定与核查</a>
         </nav>
+        <button type="button" className="download-trigger" onClick={() => setDownloadOpen(true)}>下载数据</button>
       </header>
 
       <main className="dashboard-shell">
@@ -1381,7 +1668,7 @@ export default function DashboardClient() {
             index="02"
             eyebrow="PROJECT DEVELOPMENT"
             title="项目开发情况"
-            description="从空间分布、开发状态和方法学结构三个角度观察项目供给及减排量登记。"
+            description="从空间分布、开发状态、方法学结构和登记时间观察项目供给及减排量登记。"
           />
 
           <ChinaMaps
@@ -1517,23 +1804,129 @@ export default function DashboardClient() {
             </div>
           </div>
 
-          <article className="panel wide-panel">
-            <PanelTitle
-              label="FIGURE 06"
-              title="已登记减排量与预计年均减排量达成率"
-              note="仅使用“已登记减排量”项目。柱为各方法学所有年份实际登记减排量之和；折线为实际登记年均减排量汇总值 ÷ 预计年均减排量汇总值。"
-            />
-            <EChart
-              option={reductionComparisonOption}
-              className="comparison-chart"
-              ariaLabel="各方法学实际登记减排量与预计年均减排量达成率组合图"
-              onClick={(params) => {
-                const name = String(params.name || "");
-                const row = reductionComparison.find((item) => item.methodology === name);
-                if (row) openProjectRows(`${name} · 已登记减排量项目`, row.rows, data.definitions.achievementRate);
-              }}
-            />
-          </article>
+          <div className="two-column-grid reduction-grid">
+            <article className="panel">
+              <PanelTitle
+                label="FIGURE 06"
+                title="各方法学累计登记减排量"
+                note="仅使用“已登记减排量”项目，汇总各方法学所有项目、所有登记年份的减排量。"
+              />
+              <EChart
+                option={reductionTotalOption}
+                className="comparison-chart half-chart"
+                ariaLabel="各方法学累计登记减排量柱状图"
+                onClick={(params) => {
+                  const name = String(params.name || "");
+                  const row = reductionTotals.find((item) => item.methodology === name);
+                  if (row) openProjectTable(
+                    `${name} · 累计登记减排量项目`,
+                    name,
+                    row.rows,
+                    ["实际登记减排量", "登记年份"],
+                    (project) => [
+                      { label: "实际登记减排量", value: `${exactNumber(project.actualReduction, 0)} 吨` },
+                      { label: "登记年份", value: project.reductionYearLabels.join("，") || "—" },
+                    ],
+                    "项目按实际登记减排量从大到小排序；点击项目名称可打开官方详情页。",
+                  );
+                }}
+              />
+            </article>
+            <article className="panel">
+              <PanelTitle
+                label="FIGURE 07"
+                title="平均单个项目减排量情况"
+                note="柱为各方法学实际登记减排量的项目均值；折线仍为实际登记年均减排量汇总值 ÷ 预计年均减排量汇总值。"
+              />
+              <EChart
+                option={reductionComparisonOption}
+                className="comparison-chart half-chart"
+                ariaLabel="各方法学平均单个项目实际登记减排量与预计年均减排量达成率组合图"
+                onClick={(params) => {
+                  const name = String(params.name || "");
+                  const row = reductionComparison.find((item) => item.methodology === name);
+                  if (row) openProjectTable(
+                    `${name} · 平均单个项目减排量`,
+                    name,
+                    row.rows,
+                    ["预计年均减排量", "实际登记减排量", "登记年份", "实际登记年均减排量", "预计年均减排量达成率"],
+                    (project) => [
+                      { label: "预计年均减排量", value: `${exactNumber(project.expectedAnnual, 0)} 吨/年` },
+                      { label: "实际登记减排量", value: `${exactNumber(project.actualReduction, 0)} 吨` },
+                      { label: "登记年份", value: project.reductionYearLabels.join("，") || "—" },
+                      { label: "实际登记年均减排量", value: `${exactNumber(project.actualAnnualAverage, 0)} 吨/年` },
+                      { label: "预计年均减排量达成率", value: project.expectedAnnualAchievementRate == null ? "—" : `${(project.expectedAnnualAchievementRate * 100).toFixed(1)}%` },
+                    ],
+                    data.definitions.achievementRate,
+                  );
+                }}
+              />
+            </article>
+          </div>
+
+          <div className="subsection-heading">
+            <span>2.3</span>
+            <div>
+              <h3>按项目登记时间</h3>
+              <p>项目登记日期来自已登记项目页面；减排量登记日期从本次数据基线起按每日新增记录持续维护。</p>
+            </div>
+          </div>
+          <div className="two-column-grid registration-grid">
+            <article className="panel">
+              <PanelTitle
+                label="FIGURE 08"
+                title="项目登记日期分布"
+                note="双轴柱状图分别展示当日登记项目数量和当日登记项目预计年均减排量合计。"
+              />
+              <EChart
+                option={projectRegistrationOption}
+                className="registration-chart"
+                ariaLabel="按登记日期统计的已登记项目数量和预计年均减排量"
+                onClick={(params) => {
+                  const date = String(params.name || "");
+                  const row = projectRegistrationTimeline.find((item) => item.date === date);
+                  if (row) openGroupedProjectRows(
+                    `${date} · 登记项目`,
+                    row.rows,
+                    ["项目业主", "计入期开始时间", "计入期结束时间", "预计年均减排量", "项目寿命期限"],
+                    (project) => [
+                      { label: "项目业主", value: project.owner },
+                      { label: "计入期开始时间", value: project.creditingStart || "—" },
+                      { label: "计入期结束时间", value: project.creditingEnd || "—" },
+                      { label: "预计年均减排量", value: `${exactNumber(project.expectedAnnual, 0)} 吨/年` },
+                      { label: "项目寿命期限", value: project.projectLifetimeYears ? `${exactNumber(project.projectLifetimeYears, 0)} 年` : "—" },
+                    ],
+                  );
+                }}
+              />
+            </article>
+            <article className="panel">
+              <PanelTitle
+                label="FIGURE 09"
+                title="减排量登记记录日期分布"
+                note="现有历史记录统一归入“2026-07-11 前”；以后每次更新发现的新记录按更新当日登记。"
+              />
+              <EChart
+                option={reductionRegistrationOption}
+                className="registration-chart"
+                ariaLabel="按发现日期统计的减排量登记记录数量"
+                onClick={(params) => {
+                  const label = String(params.name || "");
+                  const row = reductionRegistrationTimeline.find((item) => item.label === label);
+                  if (row) openGroupedProjectRows(
+                    `${label} · 减排量登记记录`,
+                    row.rows,
+                    ["项目业主", "登记减排量", "本次核算期覆盖日期"],
+                    (project) => [
+                      { label: "项目业主", value: project.owner },
+                      { label: "登记减排量", value: `${exactNumber(project.actualReduction, 0)} 吨` },
+                      { label: "本次核算期覆盖日期", value: project.accountingPeriodStart && project.accountingPeriodEnd ? `${project.accountingPeriodStart} 至 ${project.accountingPeriodEnd}` : "—" },
+                    ],
+                  );
+                }}
+              />
+            </article>
+          </div>
         </section>
 
         <section id="owners" className="dashboard-section">
@@ -1640,9 +2033,45 @@ export default function DashboardClient() {
             title="审定与核查机构情况"
             description="将审定机构和核查机构合并为统一机构清单，并展示其与项目业主之间的项目关系。"
           />
-          <article className="panel table-panel">
+          <article className="panel table-panel qualification-panel">
             <PanelTitle
               label="TABLE 02"
+              title="审定与核查机构资质情况"
+              note="同一机构获批多个行业领域时分行列示；行业领域及机构批准号依据国家认监委两批资质审批决定整理。"
+            />
+            <div className="qualification-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>机构名称</th>
+                    <th>行业领域</th>
+                    <th>机构批准号</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {INSTITUTION_QUALIFICATIONS
+                    .slice()
+                    .sort((a, b) => a.name.localeCompare(b.name, "zh-CN") || a.field.localeCompare(b.field, "zh-CN"))
+                    .map((row) => (
+                      <tr key={`${row.name}-${row.field}`}>
+                        <td>{row.name}</td>
+                        <td>{row.field}</td>
+                        <td><code>{row.approval}</code></td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="qualification-note">
+              <strong>备注 · 信息来源</strong>
+              {QUALIFICATION_SOURCES.map((source) => (
+                <a key={source.url} href={source.url} target="_blank" rel="noreferrer">{source.label}</a>
+              ))}
+            </div>
+          </article>
+          <article className="panel table-panel">
+            <PanelTitle
+              label="TABLE 03"
               title="审定与核查机构清单"
               note={`共识别 ${institutionRows.length} 家机构；同一项目中的审定与核查角色分别统计，默认按合计降序。`}
               controls={
@@ -1710,7 +2139,7 @@ export default function DashboardClient() {
 
           <article className="panel wide-panel relation-panel">
             <PanelTitle
-              label="FIGURE 07"
+              label="FIGURE 10"
               title="项目业主—审定与核查机构合作矩阵"
               note="横轴为高关联项目业主，纵轴为高关联机构；颜色越深表示双方合作项目越多。点击矩阵单元格查看相关项目。"
               controls={
@@ -1805,6 +2234,7 @@ export default function DashboardClient() {
         <span>数据快照：{data.generatedAt.replace("T", " ")}</span>
       </footer>
 
+      <DownloadDialog open={downloadOpen} onClose={() => setDownloadOpen(false)} />
       <Drawer key={drawer?.title || "closed"} state={drawer} onClose={() => setDrawer(null)} />
     </>
   );

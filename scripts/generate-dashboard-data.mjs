@@ -42,6 +42,25 @@ const normalizeDate = (value) => {
   return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
 };
 
+const reductionRegistrationRegistryPath = path.join(
+  siteDir,
+  "data",
+  "reduction-registration-dates.json",
+);
+
+let reductionRegistrationRegistry = {};
+let reductionRegistrationRegistryExists = true;
+try {
+  reductionRegistrationRegistry = JSON.parse(
+    await fs.readFile(reductionRegistrationRegistryPath, "utf8"),
+  );
+} catch {
+  reductionRegistrationRegistryExists = false;
+}
+
+const currentSnapshotDate = normalizeDate(quality.generated_at) || new Date().toISOString().slice(0, 10);
+const HISTORICAL_REDUCTION_BUCKET = "before-2026-07-11";
+
 function parseCoordinate(value) {
   if (value == null || value === "") return null;
   const text = String(value)
@@ -89,12 +108,27 @@ for (const row of reductionsRaw) {
   if (row.regYear != null && row.regYear !== "") bucket.years.add(String(row.regYear));
 }
 
+for (const row of projectsRaw.filter((project) => String(project._category_code) === "4")) {
+  if (!reductionRegistrationRegistry[row._snapshot_key]) {
+    reductionRegistrationRegistry[row._snapshot_key] = reductionRegistrationRegistryExists
+      ? currentSnapshotDate
+      : HISTORICAL_REDUCTION_BUCKET;
+  }
+}
+
 const projects = projectsRaw.map((row) => {
   const [longitude, latitude] = normalizedCoordinates(row.longitude, row.latitude);
   const reduction = reductionBySnapshot.get(row._snapshot_key);
   const expectedAnnual = asNumber(row.expectYearNum);
   const actualReduction = reduction ? Number(reduction.total.toFixed(2)) : 0;
   const reductionYears = reduction ? reduction.years.size : 0;
+  const reductionYearLabels = reduction
+    ? [...reduction.years].sort((a, b) => a.localeCompare(b))
+    : [];
+  const reductionRegistrationDate =
+    String(row._category_code || "") === "4"
+      ? reductionRegistrationRegistry[row._snapshot_key] || HISTORICAL_REDUCTION_BUCKET
+      : "";
   const actualAnnualAverage = reductionYears > 0 ? Number((actualReduction / reductionYears).toFixed(2)) : 0;
   return {
     snapshotKey: row._snapshot_key,
@@ -104,6 +138,11 @@ const projects = projectsRaw.map((row) => {
     projectName: row.projectName || row.list_projectName || "未命名项目",
     projectCode: row.projectCode || row.ccerCode || "",
     registrationDate: normalizeDate(row.registrationTime || row.projectRegDateTime),
+    creditingStart: normalizeDate(row.firstReckonDate),
+    creditingEnd: normalizeDate(row.endReckonDate),
+    projectLifetimeYears: asNumber(row.conclusionDate),
+    accountingPeriodStart: normalizeDate(row.regAppStartDate),
+    accountingPeriodEnd: normalizeDate(row.regAppEndDate),
     detailUrl: row._detail_url || row._source_list_url || quality.sources.project_list,
     province: row.provinceName || "未注明",
     longitude,
@@ -118,6 +157,12 @@ const projects = projectsRaw.map((row) => {
     certifiedNum: asNumber(row.certifiedNum),
     actualReduction,
     reductionYears,
+    reductionYearLabels,
+    reductionRegistrationDate,
+    reductionRegistrationLabel:
+      reductionRegistrationDate === HISTORICAL_REDUCTION_BUCKET
+        ? "2026-07-11 前"
+        : reductionRegistrationDate,
     actualAnnualAverage,
     expectedAnnualAchievementRate:
       expectedAnnual > 0 ? Number((actualAnnualAverage / expectedAnnual).toFixed(6)) : null,
@@ -203,6 +248,12 @@ const dashboard = {
 };
 
 await fs.mkdir(path.join(siteDir, "public", "data"), { recursive: true });
+await fs.mkdir(path.dirname(reductionRegistrationRegistryPath), { recursive: true });
+await fs.writeFile(
+  reductionRegistrationRegistryPath,
+  `${JSON.stringify(reductionRegistrationRegistry, null, 2)}\n`,
+  "utf8",
+);
 const outputPath = path.join(siteDir, "public", "data", "dashboard.json");
 await fs.writeFile(outputPath, JSON.stringify(dashboard), "utf8");
 console.log(

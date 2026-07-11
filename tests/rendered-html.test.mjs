@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import test from "node:test";
 
 async function render() {
@@ -55,5 +55,20 @@ test("ships a complete and internally consistent dashboard dataset", async () =>
         Math.abs(project.expectedAnnualAchievementRate - project.actualAnnualAverage / project.expectedAnnual) < 0.0000011,
       );
     }
+    assert.equal(project.reductionYearLabels.length, project.reductionYears);
+    assert.equal(project.reductionRegistrationDate, "before-2026-07-11");
+    assert.equal(project.reductionRegistrationLabel, "2026-07-11 前");
+    assert.ok(project.reductionYearLabels.every((year) => /^\d{4}$/.test(year)));
+    assert.match(project.accountingPeriodStart, /^\d{4}-\d{2}-\d{2}$/);
+    assert.match(project.accountingPeriodEnd, /^\d{4}-\d{2}-\d{2}$/);
   }
+
+  for (const project of payload.projects.filter((row) => row.categoryCode === "2")) {
+    assert.match(project.creditingStart, /^\d{4}-\d{2}-\d{2}$/);
+    assert.match(project.creditingEnd, /^\d{4}-\d{2}-\d{2}$/);
+    assert.ok(project.projectLifetimeYears > 0);
+  }
+
+  const workbook = await stat(new URL("../public/downloads/ccer-national-market-data-20260710.xlsx", import.meta.url));
+  assert.ok(workbook.size > 100_000);
 });
