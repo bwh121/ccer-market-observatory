@@ -36,6 +36,12 @@ const asNumber = (value) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const normalizeDate = (value) => {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length < 8) return "";
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+};
+
 function parseCoordinate(value) {
   if (value == null || value === "") return null;
   const text = String(value)
@@ -97,6 +103,7 @@ const projects = projectsRaw.map((row) => {
     statusName: row.applyStatusName || row.list_statusName || row.statusName || "未注明",
     projectName: row.projectName || row.list_projectName || "未命名项目",
     projectCode: row.projectCode || row.ccerCode || "",
+    registrationDate: normalizeDate(row.registrationTime || row.projectRegDateTime),
     detailUrl: row._detail_url || row._source_list_url || quality.sources.project_list,
     province: row.provinceName || "未注明",
     longitude,

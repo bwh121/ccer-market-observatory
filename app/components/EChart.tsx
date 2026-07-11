@@ -2,16 +2,18 @@
 
 import * as echarts from "echarts";
 import type { EChartsOption } from "echarts";
+import type { CSSProperties } from "react";
 import { useEffect, useRef } from "react";
 
 type EChartProps = {
   option: EChartsOption;
   className?: string;
+  style?: CSSProperties;
   onClick?: (params: Record<string, unknown>) => void;
   ariaLabel: string;
 };
 
-export function EChart({ option, className, onClick, ariaLabel }: EChartProps) {
+export function EChart({ option, className, style, onClick, ariaLabel }: EChartProps) {
   const ref = useRef<HTMLDivElement>(null);
   const clickRef = useRef(onClick);
 
@@ -34,7 +36,7 @@ export function EChart({ option, className, onClick, ariaLabel }: EChartProps) {
     };
   }, [option]);
 
-  return <div ref={ref} className={className || "chart"} role="img" aria-label={ariaLabel} />;
+  return <div ref={ref} className={className || "chart"} style={style} role="img" aria-label={ariaLabel} />;
 }
 
 export { echarts };

@@ -36,6 +36,11 @@ test("ships a complete and internally consistent dashboard dataset", async () =>
   assert.equal(payload.methodologies.length, 9);
   assert.equal(map.features.length, 35);
   assert.ok(payload.projects.every((row) => row.projectName && row.categoryCode && row.detailUrl));
+  assert.ok(
+    payload.projects
+      .filter((row) => row.categoryCode === "2" || row.categoryCode === "4")
+      .every((row) => /^\d{4}-\d{2}-\d{2}$/.test(row.registrationDate)),
+  );
 
   const actualReduction = payload.projects
     .filter((row) => row.categoryCode === "4")
