@@ -1285,22 +1285,21 @@ export default function DashboardClient() {
       const rows = registeredReductionProjects.filter((row) => row.methodology === methodology);
       const actualAnnualAverage = rows.reduce((total, row) => total + row.actualAnnualAverage, 0);
       const expectedAnnual = sum(rows, "expectedAnnual");
-      const totalActualReduction = sum(rows, "actualReduction");
       return {
         methodology,
-        rows: rows.sort((a, b) => b.actualReduction - a.actualReduction || a.projectName.localeCompare(b.projectName, "zh-CN")),
-        averageActualReduction: rows.length > 0 ? totalActualReduction / rows.length : 0,
+        rows: rows.sort((a, b) => b.actualAnnualAverage - a.actualAnnualAverage || a.projectName.localeCompare(b.projectName, "zh-CN")),
+        averageActualAnnualReduction: rows.length > 0 ? actualAnnualAverage / rows.length : 0,
         actualAnnualAverage,
         expectedAnnual,
         achievementRate: expectedAnnual > 0 ? actualAnnualAverage / expectedAnnual : 0,
       };
-    }).sort((a, b) => b.averageActualReduction - a.averageActualReduction || a.methodology.localeCompare(b.methodology, "zh-CN"));
+    }).sort((a, b) => b.averageActualAnnualReduction - a.averageActualAnnualReduction || a.methodology.localeCompare(b.methodology, "zh-CN"));
   }, [data, registeredReductionProjects]);
 
   const reductionComparisonOption = useMemo<EChartsOption>(() => ({
     color: ["#147d70", "#9b4d5b"],
     grid: { left: 74, right: 76, top: 58, bottom: 112 },
-    legend: { top: 0, data: ["平均单个项目实际登记减排量", "预计年均减排量达成率"], textStyle: { color: "#475754", fontSize: 10 } },
+    legend: { top: 0, data: ["平均单个项目年均减排量", "预计年均减排量达成率"], textStyle: { color: "#475754", fontSize: 10 } },
     tooltip: {
       trigger: "axis",
       axisPointer: { type: "cross" },
@@ -1310,8 +1309,8 @@ export default function DashboardClient() {
         if (!summary) return "";
         return [
           `<strong>${summary.methodology}</strong>`,
-          `平均单个项目实际登记减排量：${exactNumber(summary.averageActualReduction, 0)} 吨`,
-          `实际登记年均减排量：${exactNumber(summary.actualAnnualAverage, 0)} 吨/年`,
+          `平均单个项目年均减排量：${exactNumber(summary.averageActualAnnualReduction, 0)} 吨/年`,
+          `方法学实际登记年均减排量合计：${exactNumber(summary.actualAnnualAverage, 0)} 吨/年`,
           `预计年均减排量：${exactNumber(summary.expectedAnnual, 0)} 吨/年`,
           `预计年均减排量达成率：${(summary.achievementRate * 100).toFixed(1)}%`,
         ].join("<br/>");
@@ -1326,7 +1325,7 @@ export default function DashboardClient() {
     yAxis: [
       {
         type: "value",
-        name: "平均单项目减排量（吨）",
+        name: "平均单项目年均减排量（吨/年）",
         nameTextStyle: { color: "#596966" },
         axisLabel: { formatter: (value: number) => compactNumber(value, 0), color: "#596966" },
         splitLine: { lineStyle: { color: "#e7edeb" } },
@@ -1341,9 +1340,9 @@ export default function DashboardClient() {
     ],
     series: [
       {
-        name: "平均单个项目实际登记减排量",
+        name: "平均单个项目年均减排量",
         type: "bar",
-        data: reductionComparison.map((row) => Number(row.averageActualReduction.toFixed(2))),
+        data: reductionComparison.map((row) => Number(row.averageActualAnnualReduction.toFixed(2))),
         barMaxWidth: 38,
         itemStyle: { color: "#147d70" },
       },
@@ -1847,18 +1846,18 @@ export default function DashboardClient() {
             <article className="panel">
               <PanelTitle
                 label="FIGURE 07"
-                title="平均单个项目减排量情况"
-                note="柱为各方法学实际登记减排量的项目均值；折线仍为实际登记年均减排量汇总值 ÷ 预计年均减排量汇总值。"
+                title="平均单个项目年均减排量情况"
+                note="柱为各方法学下项目实际登记年均减排量的平均值；折线仍为实际登记年均减排量汇总值 ÷ 预计年均减排量汇总值。"
               />
               <EChart
                 option={reductionComparisonOption}
                 className="comparison-chart half-chart"
-                ariaLabel="各方法学平均单个项目实际登记减排量与预计年均减排量达成率组合图"
+                ariaLabel="各方法学平均单个项目年均减排量与预计年均减排量达成率组合图"
                 onClick={(params) => {
                   const name = String(params.name || "");
                   const row = reductionComparison.find((item) => item.methodology === name);
                   if (row) openProjectTable(
-                    `${name} · 平均单个项目减排量`,
+                    `${name} · 平均单个项目年均减排量`,
                     name,
                     row.rows,
                     ["预计年均减排量", "实际登记减排量", "登记年份", "实际登记年均减排量", "预计年均减排量达成率"],
