@@ -67,8 +67,10 @@ test("ships a complete and internally consistent dashboard dataset", async () =>
     assert.match(project.creditingStart, /^\d{4}-\d{2}-\d{2}$/);
     assert.match(project.creditingEnd, /^\d{4}-\d{2}-\d{2}$/);
     assert.ok(project.projectLifetimeYears > 0);
+    assert.equal(project.projectFirstSeenDate, "before-2026-07-11");
+    assert.equal(project.projectFirstSeenLabel, "2026-07-11 前");
   }
 
-  const workbook = await stat(new URL("../public/downloads/ccer-national-market-data-20260710.xlsx", import.meta.url));
+  const workbook = await stat(new URL("../public/downloads/ccer-national-market-data-latest.xlsx", import.meta.url));
   assert.ok(workbook.size > 100_000);
 });

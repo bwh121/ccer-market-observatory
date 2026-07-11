@@ -2,7 +2,7 @@
 
 import type { EChartsOption } from "echarts";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { EChart, echarts } from "./components/EChart";
 
 type Trade = {
@@ -25,6 +25,8 @@ type Project = {
   projectName: string;
   projectCode: string;
   registrationDate: string;
+  projectFirstSeenDate: string;
+  projectFirstSeenLabel: string;
   creditingStart: string;
   creditingEnd: string;
   projectLifetimeYears: number;
@@ -498,7 +500,7 @@ function DownloadDialog({ open, onClose }: { open: boolean; onClose: () => void 
           <div className="download-ready">
             <strong>信息已提交</strong>
             <p>文件包含交易数据、项目详情、减排量明细及相关数据字典。</p>
-            <a className="download-primary" href="/downloads/ccer-national-market-data-20260710.xlsx" download="CCER全国市场数据汇总_20260710.xlsx">
+            <a className="download-primary" href="/downloads/ccer-national-market-data-latest.xlsx" download="CCER全国市场数据汇总_最新.xlsx">
               下载 Excel
             </a>
           </div>
@@ -556,11 +558,16 @@ function Drawer({ state, onClose }: { state: DrawerState | null; onClose: () => 
 
   useEffect(() => {
     if (!state) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
     window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKey);
+    };
   }, [state, onClose]);
 
   if (!state) return null;
@@ -604,37 +611,37 @@ function Drawer({ state, onClose }: { state: DrawerState | null; onClose: () => 
           </div>
         ) : null}
         {visibleGroups.length ? (
-          <div className="grouped-project-list">
-            {visibleGroups.map((group) => (
-              <section className="drawer-project-group" key={group.title}>
-                <header>
-                  <h3>{group.title}</h3>
-                  <span>{group.items.length} 个项目</span>
-                </header>
-                <div className="drawer-table-scroll">
-                  <table className="drawer-project-table">
-                    <thead>
-                      <tr>
-                        <th>项目名称</th>
-                        {(state.tableColumns || []).map((column) => <th key={column}>{column}</th>)}
+          <div className="drawer-table-scroll grouped-project-list">
+            <table className="drawer-project-table grouped-unified-table">
+              <thead>
+                <tr>
+                  <th>项目名称</th>
+                  {(state.tableColumns || []).map((column) => <th key={column}>{column}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {visibleGroups.map((group) => (
+                  <Fragment key={group.title}>
+                    <tr className="methodology-group-row">
+                      <th colSpan={(state.tableColumns || []).length + 1}>
+                        <span>{group.title}</span>
+                        <small>{group.items.length} 个项目</small>
+                      </th>
+                    </tr>
+                    {group.items.map((item, index) => (
+                      <tr key={`${group.title}-${item.title}-${index}`}>
+                        <td>
+                          {item.href ? <a href={item.href} target="_blank" rel="noreferrer">{item.title}</a> : item.title}
+                        </td>
+                        {(state.tableColumns || []).map((column) => (
+                          <td key={column}>{item.meta.find((entry) => entry.label === column)?.value || "—"}</td>
+                        ))}
                       </tr>
-                    </thead>
-                    <tbody>
-                      {group.items.map((item, index) => (
-                        <tr key={`${item.title}-${index}`}>
-                          <td>
-                            {item.href ? <a href={item.href} target="_blank" rel="noreferrer">{item.title}</a> : item.title}
-                          </td>
-                          {(state.tableColumns || []).map((column) => (
-                            <td key={column}>{item.meta.find((entry) => entry.label === column)?.value || "—"}</td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            ))}
+                    ))}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : (
           <div className="drawer-list">
@@ -742,7 +749,7 @@ function ChinaMaps({
         {
           type: "map",
           map: "ccer-china",
-          roam: true,
+          roam: false,
           zoom: 1.16,
           data: heatData,
           label: { show: false },
@@ -793,7 +800,7 @@ function ChinaMaps({
       },
       geo: {
         map: "ccer-china",
-        roam: true,
+        roam: false,
         zoom: 1.06,
         left: 12,
         right: 118,
@@ -1021,13 +1028,13 @@ export default function DashboardClient() {
         },
       },
       dataZoom: [
-        { type: "inside", start: 55, end: 100 },
         {
           type: "slider",
-          start: 55,
+          start: 0,
           end: 100,
           height: 24,
           bottom: 18,
+          brushSelect: false,
           borderColor: "#c7d4d1",
           fillerColor: "rgba(20,125,112,.18)",
           handleStyle: { color: "#147d70" },
@@ -1605,6 +1612,33 @@ export default function DashboardClient() {
         approvals: [...new Set(rows.map((row) => row.approval))],
       };
     });
+  const snapshotDate = data.generatedAt.slice(0, 10);
+  const latestTradeRow = data.trades.at(-1);
+  const previousTradeWithPrice = data.trades
+    .slice(0, -1)
+    .reverse()
+    .find((row) => row.price != null && row.price > 0);
+  const latestPriceChange = latestTradeRow?.price != null && previousTradeWithPrice?.price
+    ? (latestTradeRow.price - previousTradeWithPrice.price) / previousTradeWithPrice.price
+    : null;
+  const latestRegisteredProjects = data.projects.filter(
+    (row) => row.categoryCode === "2" && row.projectFirstSeenDate === snapshotDate,
+  );
+  const latestRegisteredReductions = data.projects.filter(
+    (row) => row.categoryCode === "4" && row.reductionRegistrationDate === snapshotDate,
+  );
+  const latestProjectMethods = [...new Set(latestRegisteredProjects.map((row) => row.methodology))]
+    .map((methodology) => ({
+      methodology,
+      count: latestRegisteredProjects.filter((row) => row.methodology === methodology).length,
+    }))
+    .sort((a, b) => b.count - a.count || a.methodology.localeCompare(b.methodology, "zh-CN"));
+  const latestReductionMethods = [...new Set(latestRegisteredReductions.map((row) => row.methodology))]
+    .map((methodology) => {
+      const rows = latestRegisteredReductions.filter((row) => row.methodology === methodology);
+      return { methodology, count: rows.length, amount: sum(rows, "actualReduction") };
+    })
+    .sort((a, b) => b.amount - a.amount || a.methodology.localeCompare(b.methodology, "zh-CN"));
   const handleOwnerSort = (key: OwnerSortKey) => {
     if (key === ownerSortKey) setOwnerSortDirection((direction) => (direction === "desc" ? "asc" : "desc"));
     else {
@@ -1636,6 +1670,48 @@ export default function DashboardClient() {
               <span>数据来源：全国温室气体自愿减排交易系统、全国温室气体自愿减排注册登记系统</span>
               <span>作者：逃跑大魔王</span>
             </p>
+          </div>
+        </section>
+
+        <section className="latest-news" aria-labelledby="latest-news-title">
+          <div className="latest-news-heading">
+            <div>
+              <div className="eyebrow">LATEST BULLETIN</div>
+              <h2 id="latest-news-title">最新资讯</h2>
+            </div>
+            <span>数据更新于 {snapshotDate}</span>
+          </div>
+          <div className="latest-news-grid">
+            <article>
+              <div className="news-label">市场交易</div>
+              <p>
+                {latestTradeRow && latestTradeRow.volume > 0 ? (
+                  <>
+                    {latestTradeRow.date}，全国 CCER 市场成交量 <strong>{exactNumber(latestTradeRow.volume, 0)} 吨</strong>，
+                    成交额 <strong>{exactNumber(latestTradeRow.turnover, 2)} 元</strong>，成交均价
+                    <strong> {exactNumber(latestTradeRow.price || 0, 2)} 元/吨</strong>
+                    {latestPriceChange == null ? "。" : (
+                      <>，较前一交易日<strong>{latestPriceChange > 0 ? "上涨" : latestPriceChange < 0 ? "下跌" : "持平"} {Math.abs(latestPriceChange * 100).toFixed(2)}%</strong>。</>
+                    )}
+                  </>
+                ) : (
+                  <>{latestTradeRow?.date || snapshotDate}无成交。</>
+                )}
+              </p>
+            </article>
+            <article>
+              <div className="news-label">项目开发</div>
+              <p>
+                {snapshotDate}新登记项目 <strong>{latestRegisteredProjects.length} 个</strong>
+                {latestProjectMethods.length ? <>，其中{latestProjectMethods.map((row, index) => (
+                  <Fragment key={row.methodology}>{index ? "，" : ""}{row.methodology} <strong>{row.count} 个</strong></Fragment>
+                ))}</> : ""}；新登记减排量项目 <strong>{latestRegisteredReductions.length} 个</strong>，
+                共登记减排量 <strong>{exactNumber(sum(latestRegisteredReductions, "actualReduction"), 0)} 吨</strong>
+                {latestReductionMethods.length ? <>，其中{latestReductionMethods.map((row, index) => (
+                  <Fragment key={row.methodology}>{index ? "，" : ""}{row.methodology} <strong>{row.count} 个、{exactNumber(row.amount, 0)} 吨</strong></Fragment>
+                ))}</> : ""}。
+              </p>
+            </article>
           </div>
         </section>
 
