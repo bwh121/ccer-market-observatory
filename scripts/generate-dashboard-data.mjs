@@ -86,6 +86,10 @@ for (const row of reductionsRaw) {
 const projects = projectsRaw.map((row) => {
   const [longitude, latitude] = normalizedCoordinates(row.longitude, row.latitude);
   const reduction = reductionBySnapshot.get(row._snapshot_key);
+  const expectedAnnual = asNumber(row.expectYearNum);
+  const actualReduction = reduction ? Number(reduction.total.toFixed(2)) : 0;
+  const reductionYears = reduction ? reduction.years.size : 0;
+  const actualAnnualAverage = reductionYears > 0 ? Number((actualReduction / reductionYears).toFixed(2)) : 0;
   return {
     snapshotKey: row._snapshot_key,
     categoryCode: String(row._category_code || ""),
@@ -102,11 +106,14 @@ const projects = projectsRaw.map((row) => {
     owner: row.orgCustomerName || row.list_orgCustomerName || "未注明项目业主",
     auditAgency: row.approvalAuthorityName || "",
     verifyAgency: row.verificationAgencyName || "",
-    expectedAnnual: asNumber(row.expectYearNum),
+    expectedAnnual,
     expectedTotal: asNumber(row.expectMaxNum),
     certifiedNum: asNumber(row.certifiedNum),
-    actualReduction: reduction ? Number(reduction.total.toFixed(2)) : 0,
-    reductionYears: reduction ? reduction.years.size : 0,
+    actualReduction,
+    reductionYears,
+    actualAnnualAverage,
+    expectedAnnualAchievementRate:
+      expectedAnnual > 0 ? Number((actualAnnualAverage / expectedAnnual).toFixed(6)) : null,
   };
 });
 
@@ -172,9 +179,10 @@ const dashboard = {
   },
   definitions: {
     actualReduction: "已登记减排量页面中，各项目减排量申请明细（applyVol）跨年度求和。",
+    actualAnnualAverage: "项目实际登记减排量 ÷ 该项目减排量申请明细覆盖年份数。",
     cumulativeAveragePrice: "最新累计成交额 ÷ 最新累计成交量。",
     achievementRate:
-      "实际登记减排量 ÷（预计年均减排量 × 明细覆盖年份数）；没有年份明细时以 1 年计。",
+      "实际登记年均减排量 ÷ 预计年均减排量；方法学层面采用两项指标汇总值之比。",
     statusGrain: "项目状态图按官网七类公开页面中的状态记录计数；同一项目可能在不同状态页面出现。",
   },
   sources: [

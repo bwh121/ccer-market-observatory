@@ -41,4 +41,14 @@ test("ships a complete and internally consistent dashboard dataset", async () =>
     .filter((row) => row.categoryCode === "4")
     .reduce((total, row) => total + row.actualReduction, 0);
   assert.equal(actualReduction, 21_775_733);
+
+  for (const project of payload.projects.filter((row) => row.categoryCode === "4")) {
+    const expectedAverage = project.reductionYears > 0 ? project.actualReduction / project.reductionYears : 0;
+    assert.ok(Math.abs(project.actualAnnualAverage - expectedAverage) < 0.011);
+    if (project.expectedAnnual > 0) {
+      assert.ok(
+        Math.abs(project.expectedAnnualAchievementRate - project.actualAnnualAverage / project.expectedAnnual) < 0.0000011,
+      );
+    }
+  }
 });
