@@ -1595,6 +1595,17 @@ export default function DashboardClient() {
 
   const methodOptions = data.methodologies.map((methodology) => ({ value: methodology, label: methodology }));
   const statusOptions = data.statusOrder.map((status) => ({ value: status.code, label: status.name }));
+  const qualificationRows = [...new Set(INSTITUTION_QUALIFICATIONS.map((row) => row.name))]
+    .sort((a, b) => a.localeCompare(b, "zh-CN"))
+    .map((name, index) => {
+      const rows = INSTITUTION_QUALIFICATIONS.filter((row) => row.name === name);
+      return {
+        index: index + 1,
+        name,
+        fields: [...new Set(rows.map((row) => row.field))],
+        approvals: [...new Set(rows.map((row) => row.approval))],
+      };
+    });
   const handleOwnerSort = (key: OwnerSortKey) => {
     if (key === ownerSortKey) setOwnerSortDirection((direction) => (direction === "desc" ? "asc" : "desc"));
     else {
@@ -1607,6 +1618,7 @@ export default function DashboardClient() {
   return (
     <>
       <header className="site-header">
+        <a className="header-title" href="#">全国自愿减排交易市场（CCER）信息追踪</a>
         <nav aria-label="页面章节">
           <a href="#trade">交易情况</a>
           <a href="#development">项目开发</a>
@@ -2037,26 +2049,25 @@ export default function DashboardClient() {
             <PanelTitle
               label="TABLE 02"
               title="审定与核查机构资质情况"
-              note="同一机构获批多个行业领域时分行列示；行业领域及机构批准号依据国家认监委两批资质审批决定整理。"
+              note="同一机构获批的多个行业领域合并在一行展示；行业领域及机构批准号依据国家认监委两批资质审批决定整理。"
             />
             <div className="qualification-table-wrap">
               <table>
                 <thead>
                   <tr>
+                    <th>序号</th>
                     <th>机构名称</th>
                     <th>行业领域</th>
                     <th>机构批准号</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {INSTITUTION_QUALIFICATIONS
-                    .slice()
-                    .sort((a, b) => a.name.localeCompare(b.name, "zh-CN") || a.field.localeCompare(b.field, "zh-CN"))
-                    .map((row) => (
-                      <tr key={`${row.name}-${row.field}`}>
+                  {qualificationRows.map((row) => (
+                      <tr key={row.name}>
+                        <td>{row.index}</td>
                         <td>{row.name}</td>
-                        <td>{row.field}</td>
-                        <td><code>{row.approval}</code></td>
+                        <td>{row.fields.join("；")}</td>
+                        <td>{row.approvals.map((approval) => <code key={approval}>{approval}</code>)}</td>
                       </tr>
                     ))}
                 </tbody>
@@ -2072,7 +2083,7 @@ export default function DashboardClient() {
           <article className="panel table-panel">
             <PanelTitle
               label="TABLE 03"
-              title="审定与核查机构清单"
+              title="审定与核查机构业务情况"
               note={`共识别 ${institutionRows.length} 家机构；同一项目中的审定与核查角色分别统计，默认按合计降序。`}
               controls={
                 <label className="search-control">
