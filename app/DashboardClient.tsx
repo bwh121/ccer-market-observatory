@@ -38,6 +38,8 @@ type Project = {
   certifiedNum: number;
   actualReduction: number;
   reductionYears: number;
+  actualAnnualAverage: number;
+  expectedAnnualAchievementRate: number | null;
 };
 
 type DashboardData = {
@@ -82,6 +84,7 @@ type DrawerState = {
   title: string;
   description: string;
   items: DrawerItem[];
+  tabs?: { id: string; label: string; items: DrawerItem[] }[];
 };
 
 type OwnerRow = {
@@ -122,6 +125,8 @@ const STATUS_COLORS: Record<string, string> = {
   "4": "#9b4d5b",
   "6": "#687078",
 };
+
+const OWNER_PAGE_SIZE = 20;
 
 const compactNumber = (value: number, digits = 1) => {
   const absolute = Math.abs(value);
@@ -269,7 +274,58 @@ function MultiFilter({
   );
 }
 
+function StatusFilterBar({
+  options,
+  selected,
+  onChange,
+}: {
+  options: { value: string; label: string }[];
+  selected: Set<string>;
+  onChange: (next: Set<string>) => void;
+}) {
+  const toggle = (value: string) => {
+    const next = new Set(selected);
+    if (next.has(value)) next.delete(value);
+    else next.add(value);
+    onChange(next);
+  };
+  const allSelected = selected.size === options.length;
+
+  return (
+    <div className="status-filter-bar" aria-label="图4和图5项目状态筛选">
+      <div>
+        <strong>图 4 / 图 5 项目状态</strong>
+        <span>当前图表包含以下状态</span>
+      </div>
+      <div className="status-chip-list">
+        <button
+          type="button"
+          className={allSelected ? "status-chip active" : "status-chip"}
+          aria-pressed={allSelected}
+          onClick={() => onChange(allSelected ? new Set() : new Set(options.map((option) => option.value)))}
+        >
+          全部
+        </button>
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className={selected.has(option.value) ? "status-chip active" : "status-chip"}
+            aria-pressed={selected.has(option.value)}
+            style={{ "--status-color": STATUS_COLORS[option.value] || "#687078" } as CSSProperties}
+            onClick={() => toggle(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Drawer({ state, onClose }: { state: DrawerState | null; onClose: () => void }) {
+  const [activeTab, setActiveTab] = useState(() => state?.tabs?.[0]?.id || "");
+
   useEffect(() => {
     if (!state) return;
     const handleKey = (event: KeyboardEvent) => {
@@ -280,6 +336,7 @@ function Drawer({ state, onClose }: { state: DrawerState | null; onClose: () => 
   }, [state, onClose]);
 
   if (!state) return null;
+  const visibleItems = state.tabs?.find((tab) => tab.id === activeTab)?.items || state.items;
   return (
     <div className="drawer-layer" role="presentation" onMouseDown={onClose}>
       <aside
@@ -299,9 +356,26 @@ function Drawer({ state, onClose }: { state: DrawerState | null; onClose: () => 
             关闭
           </button>
         </div>
+        {state.tabs?.length ? (
+          <div className="drawer-tabs" role="tablist" aria-label="项目角色">
+            {state.tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab.id}
+                className={activeTab === tab.id ? "active" : ""}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                {tab.label}
+                <span>{tab.items.length}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div className="drawer-list">
-          {state.items.length ? (
-            state.items.map((item, index) => (
+          {visibleItems.length ? (
+            visibleItems.map((item, index) => (
               <article className="drawer-item" key={`${item.title}-${index}`}>
                 <div className="drawer-item-number">{String(index + 1).padStart(2, "0")}</div>
                 <div className="drawer-item-body">
@@ -334,8 +408,10 @@ function Drawer({ state, onClose }: { state: DrawerState | null; onClose: () => 
 
 function ChinaMaps({ data, openProjects }: { data: DashboardData; openProjects: (title: string, rows: Project[]) => void }) {
   const [mapReady, setMapReady] = useState(false);
+  const [mapProvinceNames, setMapProvinceNames] = useState<string[]>([]);
   const [heatMetric, setHeatMetric] = useState<"registeredProjects" | "actualReduction">("registeredProjects");
   const [pointStatus, setPointStatus] = useState<"2" | "4">("2");
+  const [pointMethods, setPointMethods] = useState<Set<string>>(() => new Set(data.methodologies));
 
   useEffect(() => {
     let active = true;
@@ -344,6 +420,11 @@ function ChinaMaps({ data, openProjects }: { data: DashboardData; openProjects: 
       .then((geoJson) => {
         if (!active) return;
         echarts.registerMap("ccer-china", geoJson);
+        setMapProvinceNames(
+          (geoJson.features || [])
+            .map((feature: { properties?: { name?: string } }) => feature.properties?.name || "")
+            .filter(Boolean),
+        );
         setMapReady(true);
       })
       .catch(() => setMapReady(false));
@@ -359,11 +440,17 @@ function ChinaMaps({ data, openProjects }: { data: DashboardData; openProjects: 
       const increment = heatMetric === "registeredProjects" ? 1 : row.actualReduction;
       byProvince.set(row.province, (byProvince.get(row.province) || 0) + increment);
     }
-    return [...byProvince.entries()].map(([name, value]) => ({ name, value: Number(value.toFixed(2)) }));
-  }, [data.projects, heatMetric]);
+    const names = mapProvinceNames.length ? mapProvinceNames : data.provinces;
+    const maxValue = Math.max(1, ...byProvince.values());
+    const colors = ["#ffffff", "#dceee9", "#a9d2c8", "#61a99b", "#147d70", "#0b4f4a"];
+    return names.map((name) => {
+      const value = Number((byProvince.get(name) || 0).toFixed(2));
+      const colorIndex = value === 0 ? 0 : Math.max(1, Math.ceil((value / maxValue) * (colors.length - 1)));
+      return { name, value, itemStyle: { areaColor: colors[colorIndex] } };
+    });
+  }, [data.projects, data.provinces, heatMetric, mapProvinceNames]);
 
   const heatOption = useMemo<EChartsOption>(() => {
-    const maxValue = Math.max(1, ...heatData.map((row) => row.value));
     return {
       animationDuration: 500,
       tooltip: {
@@ -378,25 +465,15 @@ function ChinaMaps({ data, openProjects }: { data: DashboardData; openProjects: 
           }`;
         },
       },
-      visualMap: {
-        min: 0,
-        max: maxValue,
-        left: 16,
-        bottom: 14,
-        text: [heatMetric === "registeredProjects" ? "项目多" : "减排量高", "0"],
-        inRange: { color: ["#e8f2ef", "#8cc4b7", "#147d70", "#0b4f4a"] },
-        calculable: true,
-        textStyle: { color: "#52615f", fontSize: 10 },
-      },
       series: [
         {
           type: "map",
           map: "ccer-china",
           roam: true,
-          zoom: 1.06,
+          zoom: 1.16,
           data: heatData,
           label: { show: false },
-          itemStyle: { areaColor: "#eef3f1", borderColor: "#a5b8b4", borderWidth: 0.7 },
+          itemStyle: { areaColor: "#ffffff", borderColor: "#a5b8b4", borderWidth: 0.7 },
           emphasis: { label: { show: true, color: "#14211f" }, itemStyle: { areaColor: "#d9b36c" } },
         },
       ],
@@ -404,8 +481,20 @@ function ChinaMaps({ data, openProjects }: { data: DashboardData; openProjects: 
   }, [heatData, heatMetric]);
 
   const pointRows = useMemo(
-    () => data.projects.filter((row) => row.categoryCode === pointStatus && row.longitude != null && row.latitude != null),
-    [data.projects, pointStatus],
+    () =>
+      data.projects.filter(
+        (row) =>
+          row.categoryCode === pointStatus &&
+          pointMethods.has(row.methodology) &&
+          row.longitude != null &&
+          row.latitude != null,
+      ),
+    [data.projects, pointMethods, pointStatus],
+  );
+
+  const visiblePointMethods = useMemo(
+    () => data.methodologies.filter((methodology) => pointRows.some((row) => row.methodology === methodology)),
+    [data.methodologies, pointRows],
   );
 
   const pointOption = useMemo<EChartsOption>(() => {
@@ -423,9 +512,10 @@ function ChinaMaps({ data, openProjects }: { data: DashboardData; openProjects: 
       legend: {
         type: "scroll",
         orient: "vertical",
-        right: 4,
-        top: 16,
-        bottom: 16,
+        right: 6,
+        bottom: 6,
+        selectedMode: false,
+        data: visiblePointMethods,
         textStyle: { color: "#4b5c59", fontSize: 10 },
       },
       geo: {
@@ -439,7 +529,9 @@ function ChinaMaps({ data, openProjects }: { data: DashboardData; openProjects: 
         itemStyle: { areaColor: "#edf2f0", borderColor: "#a6b8b4", borderWidth: 0.7 },
         emphasis: { itemStyle: { areaColor: "#dce9e5" }, label: { show: false } },
       },
-      series: data.methodologies.map((method, methodPosition) => ({
+      series: visiblePointMethods.map((method) => {
+        const methodPosition = data.methodologies.indexOf(method);
+        return {
         name: method,
         type: "scatter",
         coordinateSystem: "geo",
@@ -457,9 +549,10 @@ function ChinaMaps({ data, openProjects }: { data: DashboardData; openProjects: 
             snapshotKey: row.snapshotKey,
             methodIndex: methodIndex.get(method),
           })),
-      })),
+        };
+      }),
     };
-  }, [data.methodologies, pointRows]);
+  }, [data.methodologies, pointRows, visiblePointMethods]);
 
   if (!mapReady) {
     return <div className="map-loading">省级底图加载中…</div>;
@@ -489,15 +582,23 @@ function ChinaMaps({ data, openProjects }: { data: DashboardData; openProjects: 
         <PanelTitle
           label="MAP 02"
           title="项目经纬度与方法学分布"
-          note={`${pointRows.length} 个项目坐标已纳入；颜色与形状区分方法学。`}
+          note={`${pointRows.length} 个项目坐标已纳入；右下角图例仅展示当前有项目的方法学领域。`}
           controls={
-            <label className="select-control">
-              项目状态
-              <select value={pointStatus} onChange={(event) => setPointStatus(event.target.value as typeof pointStatus)}>
-                <option value="2">已登记项目</option>
-                <option value="4">已登记减排量项目</option>
-              </select>
-            </label>
+            <div className="map-filter-controls">
+              <label className="select-control">
+                项目状态
+                <select value={pointStatus} onChange={(event) => setPointStatus(event.target.value as typeof pointStatus)}>
+                  <option value="2">已登记项目</option>
+                  <option value="4">已登记减排量项目</option>
+                </select>
+              </label>
+              <MultiFilter
+                label="方法学领域"
+                options={data.methodologies.map((methodology) => ({ value: methodology, label: methodology }))}
+                selected={pointMethods}
+                onChange={setPointMethods}
+              />
+            </div>
           }
         />
         <EChart
@@ -523,6 +624,7 @@ export default function DashboardClient() {
   const [methodStatusFilter, setMethodStatusFilter] = useState<Set<string>>(new Set(["1", "1-1", "2", "3", "3-1", "4"]));
   const [ownerMethodFilter, setOwnerMethodFilter] = useState<Set<string>>(new Set());
   const [ownerSearch, setOwnerSearch] = useState("");
+  const [ownerPage, setOwnerPage] = useState(1);
   const [institutionSearch, setInstitutionSearch] = useState("");
   const [relationLimit, setRelationLimit] = useState("18");
 
@@ -548,8 +650,7 @@ export default function DashboardClient() {
         .slice()
         .sort((a, b) => b.actualReduction - a.actualReduction || b.expectedAnnual - a.expectedAnnual)
         .map((row) => {
-          const denominator = row.expectedAnnual * Math.max(row.reductionYears, 1);
-          const rate = denominator > 0 ? row.actualReduction / denominator : null;
+          const rate = row.expectedAnnualAchievementRate;
           return {
             title: row.projectName,
             href: row.detailUrl,
@@ -559,7 +660,8 @@ export default function DashboardClient() {
               { label: "项目业主", value: row.owner },
               { label: "预计年均减排量", value: `${exactNumber(row.expectedAnnual, 0)} 吨` },
               { label: "实际登记减排量", value: `${exactNumber(row.actualReduction, 0)} 吨` },
-              ...(rate == null ? [] : [{ label: "达成率", value: `${(rate * 100).toFixed(1)}%` }]),
+              { label: "实际登记年均减排量", value: `${exactNumber(row.actualAnnualAverage, 0)} 吨/年` },
+              ...(rate == null ? [] : [{ label: "预计年均减排量达成率", value: `${(rate * 100).toFixed(1)}%` }]),
             ],
           };
         }),
@@ -571,8 +673,7 @@ export default function DashboardClient() {
     return {
       animationDuration: 500,
       color: ["#9fc8bf", "#9b4d5b"],
-      grid: { left: 58, right: 66, top: 36, bottom: 82 },
-      legend: { top: 0, right: 0, data: ["每日成交量", "成交均价"], textStyle: { color: "#475754" } },
+      grid: { left: 58, right: 66, top: 18, bottom: 82 },
       tooltip: {
         trigger: "axis",
         axisPointer: { type: "cross", crossStyle: { color: "#71817e" } },
@@ -788,11 +889,15 @@ export default function DashboardClient() {
     if (!data) return [];
     return data.methodologies.map((methodology) => {
       const rows = registeredReductionProjects.filter((row) => row.methodology === methodology);
+      const actualAnnualAverage = rows.reduce((total, row) => total + row.actualAnnualAverage, 0);
+      const expectedAnnual = sum(rows, "expectedAnnual");
       return {
         methodology,
         rows,
-        averageExpected: rows.length ? sum(rows, "expectedAnnual") / rows.length : 0,
         actualReduction: sum(rows, "actualReduction"),
+        actualAnnualAverage,
+        expectedAnnual,
+        achievementRate: expectedAnnual > 0 ? actualAnnualAverage / expectedAnnual : 0,
       };
     });
   }, [data, registeredReductionProjects]);
@@ -800,15 +905,20 @@ export default function DashboardClient() {
   const reductionComparisonOption = useMemo<EChartsOption>(() => ({
     color: ["#147d70", "#9b4d5b"],
     grid: { left: 74, right: 76, top: 58, bottom: 118 },
-    legend: { top: 0, data: ["实际登记减排量", "平均预计年均减排量"], textStyle: { color: "#475754" } },
+    legend: { top: 0, data: ["实际登记减排量", "预计年均减排量达成率"], textStyle: { color: "#475754" } },
     tooltip: {
       trigger: "axis",
       axisPointer: { type: "cross" },
       formatter: (raw: unknown) => {
-        const params = (Array.isArray(raw) ? raw : [raw]) as Array<{ seriesName?: string; value?: unknown; axisValue?: string }>;
+        const params = (Array.isArray(raw) ? raw : [raw]) as Array<{ axisValue?: string }>;
+        const summary = reductionComparison.find((row) => row.methodology === params[0]?.axisValue);
+        if (!summary) return "";
         return [
-          `<strong>${params[0]?.axisValue || ""}</strong>`,
-          ...params.map((row) => `${row.seriesName || ""}：${exactNumber(Number(row.value || 0), 0)} 吨`),
+          `<strong>${summary.methodology}</strong>`,
+          `实际登记减排量：${exactNumber(summary.actualReduction, 0)} 吨`,
+          `实际登记年均减排量：${exactNumber(summary.actualAnnualAverage, 0)} 吨/年`,
+          `预计年均减排量：${exactNumber(summary.expectedAnnual, 0)} 吨/年`,
+          `预计年均减排量达成率：${(summary.achievementRate * 100).toFixed(1)}%`,
         ].join("<br/>");
       },
     },
@@ -828,9 +938,9 @@ export default function DashboardClient() {
       },
       {
         type: "value",
-        name: "平均预计年均减排量（吨）",
+        name: "预计年均减排量达成率（%）",
         nameTextStyle: { color: "#596966" },
-        axisLabel: { formatter: (value: number) => compactNumber(value, 0), color: "#596966" },
+        axisLabel: { formatter: (value: number) => `${value}%`, color: "#596966" },
         splitLine: { show: false },
       },
     ],
@@ -843,10 +953,10 @@ export default function DashboardClient() {
         itemStyle: { color: "#147d70" },
       },
       {
-        name: "平均预计年均减排量",
+        name: "预计年均减排量达成率",
         type: "line",
         yAxisIndex: 1,
-        data: reductionComparison.map((row) => Number(row.averageExpected.toFixed(2))),
+        data: reductionComparison.map((row) => Number((row.achievementRate * 100).toFixed(2))),
         symbolSize: 7,
         lineStyle: { color: "#9b4d5b", width: 2 },
         itemStyle: { color: "#9b4d5b" },
@@ -879,6 +989,9 @@ export default function DashboardClient() {
       .filter((row) => row.name.includes(ownerSearch.trim()))
       .sort((a, b) => b.actualReduction - a.actualReduction || b.projectCount - a.projectCount || a.name.localeCompare(b.name, "zh-CN"));
   }, [data, ownerMethodFilter, ownerSearch]);
+
+  const ownerPageCount = Math.max(1, Math.ceil(ownerRows.length / OWNER_PAGE_SIZE));
+  const pagedOwnerRows = ownerRows.slice((ownerPage - 1) * OWNER_PAGE_SIZE, ownerPage * OWNER_PAGE_SIZE);
 
   const institutionRows = useMemo<InstitutionRow[]>(() => {
     if (!data) return [];
@@ -1024,41 +1137,18 @@ export default function DashboardClient() {
           <a href="#owners">项目业主</a>
           <a href="#institutions">审定与核查</a>
         </nav>
-        <div className="freshness">
-          <span>DATA THROUGH</span>
-          <strong>{data.dataThrough}</strong>
-        </div>
       </header>
 
-      <main>
+      <main className="dashboard-shell">
         <section className="hero">
-          <div className="hero-copy">
-            <div className="eyebrow">NATIONAL CCER MARKET OBSERVATORY</div>
-            <h1>从交易价格到项目履约，观察全国 CCER 市场的形成与扩展</h1>
-            <p>
-              基于全国 CCER 交易系统和项目公示平台逐日、逐项目整理。所有指标均可回溯至官方详情页，图表支持筛选、悬停与项目级下钻。
+          <div className="hero-copy hero-centered">
+            <h1>全国自愿减排交易市场（CCER）信息追踪</h1>
+            <p className="hero-byline">
+              <span>数据时间：{data.dataThrough}</span>
+              <span>数据来源：全国温室气体自愿减排交易系统、全国温室气体自愿减排注册登记系统</span>
+              <span>作者：逃跑大魔王</span>
             </p>
           </div>
-          <dl className="hero-meta">
-            <div>
-              <dt>交易记录</dt>
-              <dd>{data.quality.tradeRecords}</dd>
-            </div>
-            <div>
-              <dt>状态记录</dt>
-              <dd>{data.quality.projectRecords}</dd>
-            </div>
-            <div>
-              <dt>方法学</dt>
-              <dd>{data.methodologies.length}</dd>
-            </div>
-            <div>
-              <dt>地图坐标覆盖</dt>
-              <dd>
-                {data.quality.mappedRegistered}/{data.quality.registeredTotal}
-              </dd>
-            </div>
-          </dl>
         </section>
 
         <section id="trade" className="dashboard-section">
@@ -1069,12 +1159,12 @@ export default function DashboardClient() {
             description="聚焦最新交易日与市场累计规模，并用同一时间轴观察成交量和成交价格。"
           />
           <div className="kpi-grid six">
-            <KpiCard label="最近交易日成交均价" value={exactNumber(data.tradeSummary.latestPrice || 0, 2)} unit="元/吨" note={data.tradeSummary.latestDate} tone="rust" />
             <KpiCard label="最近交易日成交量" value={compactNumber(data.tradeSummary.latestVolume)} unit="吨" note={exactNumber(data.tradeSummary.latestVolume, 0)} />
             <KpiCard label="最近交易日成交额" value={compactNumber(data.tradeSummary.latestTurnover)} unit="元" note={exactNumber(data.tradeSummary.latestTurnover, 2)} tone="blue" />
-            <KpiCard label="累计平均成交价" value={exactNumber(data.tradeSummary.cumulativeAveragePrice || 0, 2)} unit="元/吨" note="累计成交额 ÷ 累计成交量" tone="rust" />
+            <KpiCard label="最近交易日成交均价" value={exactNumber(data.tradeSummary.latestPrice || 0, 2)} unit="元/吨" note={data.tradeSummary.latestDate} tone="rust" />
             <KpiCard label="累计成交量" value={compactNumber(data.tradeSummary.cumulativeVolume)} unit="吨" note={exactNumber(data.tradeSummary.cumulativeVolume, 0)} />
             <KpiCard label="累计成交额" value={compactNumber(data.tradeSummary.cumulativeTurnover)} unit="元" note={exactNumber(data.tradeSummary.cumulativeTurnover, 2)} tone="blue" />
+            <KpiCard label="累计平均成交价" value={exactNumber(data.tradeSummary.cumulativeAveragePrice || 0, 2)} unit="元/吨" note="累计成交额 ÷ 累计成交量" tone="rust" />
           </div>
           <article className="panel wide-panel">
             <PanelTitle
@@ -1172,10 +1262,7 @@ export default function DashboardClient() {
             ))}
           </div>
 
-          <div className="method-filter-row">
-            <span>图表筛选</span>
-            <MultiFilter label="项目状态" options={statusOptions} selected={methodStatusFilter} onChange={setMethodStatusFilter} />
-          </div>
+          <StatusFilterBar options={statusOptions} selected={methodStatusFilter} onChange={setMethodStatusFilter} />
           <div className="two-column-grid">
             <article className="panel">
               <PanelTitle label="FIGURE 04" title="各方法学项目数量" note="按所选项目状态汇总；点击柱子查看项目。" />
@@ -1208,17 +1295,17 @@ export default function DashboardClient() {
           <article className="panel wide-panel">
             <PanelTitle
               label="FIGURE 06"
-              title="已登记减排量：预计年均水平与实际登记量"
-              note="仅使用“已登记减排量”项目。柱为跨年度实际登记减排量，折线为项目平均预计年均减排量；点击柱子查看达成率。"
+              title="已登记减排量与预计年均减排量达成率"
+              note="仅使用“已登记减排量”项目。柱为各方法学所有年份实际登记减排量之和；折线为实际登记年均减排量汇总值 ÷ 预计年均减排量汇总值。"
             />
             <EChart
               option={reductionComparisonOption}
               className="comparison-chart"
-              ariaLabel="各方法学预计年均减排量与实际登记减排量组合图"
+              ariaLabel="各方法学实际登记减排量与预计年均减排量达成率组合图"
               onClick={(params) => {
                 const name = String(params.name || "");
                 const row = reductionComparison.find((item) => item.methodology === name);
-                if (row) openProjectRows(`${name} · 已登记减排量项目`, row.rows, data.definitions.achievementRate);
+                  if (row) openProjectRows(`${name} · 已登记减排量项目`, row.rows, data.definitions.achievementRate);
               }}
             />
           </article>
@@ -1238,10 +1325,25 @@ export default function DashboardClient() {
               note={`当前筛选显示 ${ownerRows.length} 家项目业主。项目数量按项目名称去重。`}
               controls={
                 <div className="table-controls">
-                  <MultiFilter label="方法学领域" options={methodOptions} selected={ownerMethodFilter} onChange={setOwnerMethodFilter} />
+                  <MultiFilter
+                    label="方法学领域"
+                    options={methodOptions}
+                    selected={ownerMethodFilter}
+                    onChange={(next) => {
+                      setOwnerMethodFilter(next);
+                      setOwnerPage(1);
+                    }}
+                  />
                   <label className="search-control">
                     <span>检索</span>
-                    <input value={ownerSearch} onChange={(event) => setOwnerSearch(event.target.value)} placeholder="输入项目业主名称" />
+                    <input
+                      value={ownerSearch}
+                      onChange={(event) => {
+                        setOwnerSearch(event.target.value);
+                        setOwnerPage(1);
+                      }}
+                      placeholder="输入项目业主名称"
+                    />
                   </label>
                 </div>
               }
@@ -1259,7 +1361,7 @@ export default function DashboardClient() {
                   </tr>
                 </thead>
                 <tbody>
-                  {ownerRows.map((row) => (
+                  {pagedOwnerRows.map((row) => (
                     <tr key={row.name}>
                       <td>
                         <button type="button" className="table-link" onClick={() => openProjectRows(`${row.name} · 项目清单`, row.projects)}>
@@ -1275,6 +1377,17 @@ export default function DashboardClient() {
                   ))}
                 </tbody>
               </table>
+            </div>
+            <div className="pagination" aria-label="项目业主清单分页">
+              <span>
+                第 {ownerPage} / {ownerPageCount} 页 · 每页 {OWNER_PAGE_SIZE} 条
+              </span>
+              <div>
+                <button type="button" onClick={() => setOwnerPage(1)} disabled={ownerPage === 1}>首页</button>
+                <button type="button" onClick={() => setOwnerPage((page) => Math.max(1, page - 1))} disabled={ownerPage === 1}>上一页</button>
+                <button type="button" onClick={() => setOwnerPage((page) => Math.min(ownerPageCount, page + 1))} disabled={ownerPage === ownerPageCount}>下一页</button>
+                <button type="button" onClick={() => setOwnerPage(ownerPageCount)} disabled={ownerPage === ownerPageCount}>末页</button>
+              </div>
             </div>
           </article>
         </section>
@@ -1323,15 +1436,25 @@ export default function DashboardClient() {
                               eyebrow: "INSTITUTION DETAILS",
                               title: row.name,
                               description: `审定 ${row.auditCount} 个项目，核查 ${row.verifyCount} 个项目。`,
-                              items: row.details.map(({ role, project }) => ({
-                                title: project.projectName,
-                                href: project.detailUrl,
-                                meta: [
-                                  { label: "机构角色", value: role },
-                                  { label: "项目业主", value: project.owner },
-                                  { label: "方法学", value: project.methodology },
-                                  { label: "项目状态", value: project.categoryName },
-                                ],
+                              items: [],
+                              tabs: [
+                                { id: "audit", label: "审定项目", role: "审定" },
+                                { id: "verify", label: "核查项目", role: "核查" },
+                              ].map((tab) => ({
+                                id: tab.id,
+                                label: tab.label,
+                                items: row.details
+                                  .filter((detail) => detail.role === tab.role)
+                                  .map(({ role, project }) => ({
+                                    title: project.projectName,
+                                    href: project.detailUrl,
+                                    meta: [
+                                      { label: "机构角色", value: role },
+                                      { label: "项目业主", value: project.owner },
+                                      { label: "方法学", value: project.methodology },
+                                      { label: "项目状态", value: project.categoryName },
+                                    ],
+                                  })),
                               })),
                             })
                           }
@@ -1395,16 +1518,21 @@ export default function DashboardClient() {
             </article>
             <article>
               <span>02</span>
-              <h3>达成率</h3>
-              <p>{data.definitions.achievementRate}</p>
+              <h3>实际登记年均减排量</h3>
+              <p>{data.definitions.actualAnnualAverage}</p>
             </article>
             <article>
               <span>03</span>
+              <h3>预计年均减排量达成率</h3>
+              <p>{data.definitions.achievementRate}</p>
+            </article>
+            <article>
+              <span>04</span>
               <h3>状态记录</h3>
               <p>{data.definitions.statusGrain}</p>
             </article>
             <article>
-              <span>04</span>
+              <span>05</span>
               <h3>质量说明</h3>
               <p>
                 交易行情含 {data.quality.inferredTradeRows} 条相邻累计值反推记录、{data.quality.reviewedTradeRows} 条历史版式复核记录；
@@ -1427,7 +1555,7 @@ export default function DashboardClient() {
         <span>数据快照：{data.generatedAt.replace("T", " ")}</span>
       </footer>
 
-      <Drawer state={drawer} onClose={() => setDrawer(null)} />
+      <Drawer key={drawer?.title || "closed"} state={drawer} onClose={() => setDrawer(null)} />
     </>
   );
 }

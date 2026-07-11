@@ -152,12 +152,10 @@ a {
 }
 
 .hero {
-  min-height: 490px;
+  min-height: 410px;
   display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(380px, 0.7fr);
-  align-items: end;
-  gap: 6vw;
-  padding: 92px 0 66px;
+  place-items: center;
+  padding: 76px 0 62px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -165,26 +163,55 @@ a {
   max-width: 920px;
 }
 
+.hero-centered {
+  width: 100%;
+  text-align: center;
+}
+
 .eyebrow {
   color: var(--teal);
 }
 
 .hero h1 {
-  max-width: 880px;
-  margin: 20px 0 24px;
+  max-width: 1080px;
+  margin: 0 auto 28px;
   font-family: var(--serif);
-  font-size: clamp(42px, 5.2vw, 78px);
+  font-size: clamp(40px, 5vw, 72px);
   font-weight: 600;
   line-height: 1.08;
   letter-spacing: -0.035em;
 }
 
 .hero-copy > p {
-  max-width: 760px;
-  margin: 0;
+  max-width: 1160px;
+  margin: 0 auto;
   color: var(--muted);
   font-size: 16px;
   line-height: 1.9;
+}
+
+.hero-byline {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 26px;
+}
+
+.hero-byline span {
+  position: relative;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.hero-byline span + span::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -14px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--rust);
 }
 
 .hero-meta {
@@ -368,6 +395,12 @@ a {
   gap: 10px;
 }
 
+.map-filter-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .trend-chart {
   width: 100%;
   height: 480px;
@@ -449,8 +482,8 @@ a {
 
 .method-card {
   position: relative;
-  min-height: 240px;
-  padding: 22px;
+  min-height: 188px;
+  padding: 16px 18px;
   border: 1px solid var(--line);
   border-left: 4px solid var(--method-color);
   background: rgba(250, 251, 248, 0.8);
@@ -461,17 +494,17 @@ a {
 }
 
 .method-card h4 {
-  min-height: 52px;
-  margin: 10px 0 18px;
+  min-height: 44px;
+  margin: 7px 0 12px;
   font-family: var(--serif);
-  font-size: 17px;
-  line-height: 1.45;
+  font-size: 15px;
+  line-height: 1.4;
 }
 
 .method-card dl {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  gap: 9px 14px;
   margin: 0;
 }
 
@@ -481,9 +514,9 @@ a {
 }
 
 .method-card dd {
-  margin: 3px 0 0;
+  margin: 2px 0 0;
   font-family: var(--serif);
-  font-size: 20px;
+  font-size: 17px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -492,6 +525,66 @@ a {
   margin: 28px 0 12px;
   color: var(--muted);
   font-size: 11px;
+}
+
+.status-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.42fr) minmax(0, 1.58fr);
+  align-items: center;
+  gap: 18px;
+  margin: 28px 0 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--teal);
+  background: rgba(250, 251, 248, 0.88);
+}
+
+.status-filter-bar strong {
+  display: block;
+  font-family: var(--serif);
+  font-size: 14px;
+}
+
+.status-filter-bar > div > span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.status-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.status-chip {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--muted);
+  background: #f7f9f6;
+  font-size: 10px;
+}
+
+.status-chip::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--status-color, var(--ink));
+  opacity: 0.35;
+}
+
+.status-chip.active {
+  border-color: var(--status-color, var(--ink));
+  color: var(--ink);
+  background: #ffffff;
+}
+
+.status-chip.active::before {
+  opacity: 1;
 }
 
 .select-control,
@@ -656,6 +749,36 @@ tbody tr:hover td {
   text-underline-offset: 3px;
 }
 
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding-top: 16px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.pagination > div {
+  display: flex;
+  gap: 6px;
+}
+
+.pagination button {
+  min-width: 58px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--teal-dark);
+  background: #f4f8f5;
+  font-size: 10px;
+}
+
+.pagination button:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
 .relation-panel {
   margin-top: 26px;
 }
@@ -780,6 +903,38 @@ tbody tr:hover td {
   gap: 10px;
 }
 
+.drawer-tabs {
+  position: sticky;
+  top: 128px;
+  z-index: 2;
+  display: flex;
+  gap: 8px;
+  margin: -8px 0 18px;
+  padding: 10px 0;
+  background: rgba(247, 248, 245, 0.96);
+}
+
+.drawer-tabs button {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--muted);
+  background: #edf2ef;
+  text-align: left;
+}
+
+.drawer-tabs button.active {
+  border-color: var(--teal);
+  color: #ffffff;
+  background: var(--teal);
+}
+
+.drawer-tabs button span {
+  float: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .drawer-item {
   display: grid;
   grid-template-columns: 45px 1fr;
@@ -840,8 +995,7 @@ tbody tr:hover td {
 @media (max-width: 1180px) {
   .kpi-grid.six { grid-template-columns: repeat(3, 1fr); }
   .method-card-grid { grid-template-columns: repeat(2, 1fr); }
-  .hero { grid-template-columns: 1fr; min-height: auto; }
-  .hero-meta { max-width: 720px; }
+  .hero { min-height: auto; }
 }
 
 @media (max-width: 900px) {
@@ -855,6 +1009,8 @@ tbody tr:hover td {
   .kpi-grid.four { grid-template-columns: repeat(2, 1fr); }
   .methodology-notes { grid-template-columns: 1fr; }
   .sources-row { grid-column: 1; margin: 0; }
+  .status-filter-bar { grid-template-columns: 1fr; }
+  .status-chip-list { justify-content: flex-start; }
 }
 
 @media (max-width: 620px) {
@@ -871,6 +1027,12 @@ tbody tr:hover td {
   .panel-title-row { display: block; }
   .panel-controls { margin-top: 12px; }
   .table-controls { align-items: flex-end; flex-direction: column; }
+  .map-filter-controls { align-items: flex-end; flex-direction: column; }
+  .pagination { align-items: flex-start; flex-direction: column; }
+  .pagination > div { width: 100%; }
+  .pagination button { flex: 1; min-width: 0; }
+  .hero-byline { align-items: center; flex-direction: column; gap: 5px; }
+  .hero-byline span + span::before { display: none; }
   .trend-chart { height: 420px; }
   .map-chart { height: 390px; }
   .method-chart { height: 480px; }
