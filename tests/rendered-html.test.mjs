@@ -24,6 +24,12 @@ test("server-renders the CCER research dashboard shell", async () => {
   assert.match(html, /全国 CCER 交易、项目开发/);
   assert.match(html, /http:\/\/localhost:3000\/og\.png/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
+
+  const dashboardSource = await readFile(new URL("../app/DashboardClient.tsx", import.meta.url), "utf8");
+  assert.match(dashboardSource, /建议反馈/);
+  assert.match(dashboardSource, /const bulletinDate/);
+  assert.match(dashboardSource, /\{bulletinDate\}新登记项目/);
+  assert.match(dashboardSource, /label:\s*\{[\s\S]*?show:\s*true,[\s\S]*?position:\s*"top"/);
 });
 
 test("ships a complete and internally consistent dashboard dataset", async () => {

@@ -553,6 +553,144 @@ function DownloadDialog({ open, onClose }: { open: boolean; onClose: () => void 
   );
 }
 
+function FeedbackDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [suggestions, setSuggestions] = useState([""]);
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
+  const [message, setMessage] = useState("");
+
+  const reset = () => {
+    setSuggestions([""]);
+    setAttachments([]);
+    setStatus("idle");
+    setMessage("");
+  };
+
+  const close = () => {
+    reset();
+    onClose();
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKey);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const updateSuggestion = (index: number, value: string) => {
+    setSuggestions((current) => current.map((item, itemIndex) => itemIndex === index ? value : item));
+  };
+
+  const removeSuggestion = (index: number) => {
+    setSuggestions((current) => current.filter((_, itemIndex) => itemIndex !== index));
+  };
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const validSuggestions = suggestions.map((item) => item.trim()).filter(Boolean);
+    if (!validSuggestions.length) {
+      setStatus("error");
+      setMessage("请至少填写一条建议。");
+      return;
+    }
+    setStatus("submitting");
+    setMessage("");
+    try {
+      const form = new FormData();
+      validSuggestions.forEach((item) => form.append("message", item));
+      attachments.forEach((file) => form.append("attachments", file));
+      const response = await fetch("/api/feedback", { method: "POST", body: form });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "提交失败，请稍后重试。");
+      setStatus("success");
+    } catch (reason) {
+      setStatus("error");
+      setMessage(reason instanceof Error ? reason.message : "提交失败，请稍后重试。");
+    }
+  };
+
+  return (
+    <div className="download-layer feedback-layer" role="presentation" onMouseDown={close}>
+      <section className="download-dialog feedback-dialog" role="dialog" aria-modal="true" aria-labelledby="feedback-title" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="download-dialog-head">
+          <div>
+            <div className="eyebrow">SUGGESTIONS & FEEDBACK</div>
+            <h2 id="feedback-title">建议反馈</h2>
+            <p>欢迎提交一条或多条建议，也可以附上图片、文档等附件。</p>
+          </div>
+          <button type="button" className="close-button" onClick={close}>关闭</button>
+        </div>
+        {status === "success" ? (
+          <div className="feedback-success">
+            <strong>谢谢你的建议</strong>
+            <p>反馈已经安全保存，作者可以在专属管理页面查看。</p>
+            <div className="feedback-success-actions">
+              <button type="button" className="download-primary" onClick={reset}>继续提交建议</button>
+              <button type="button" className="secondary-button" onClick={close}>关闭</button>
+            </div>
+          </div>
+        ) : (
+          <form className="feedback-form" onSubmit={submit}>
+            <div className="feedback-fields">
+              {suggestions.map((suggestion, index) => (
+                <label key={index}>
+                  <span>建议 {index + 1}</span>
+                  <textarea
+                    value={suggestion}
+                    onChange={(event) => updateSuggestion(index, event.target.value)}
+                    placeholder="请写下你的建议、问题或需要补充的数据……"
+                    maxLength={2000}
+                    required
+                  />
+                  {suggestions.length > 1 ? (
+                    <button type="button" className="feedback-remove" onClick={() => removeSuggestion(index)}>删除本条</button>
+                  ) : null}
+                </label>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="feedback-add"
+              onClick={() => setSuggestions((current) => [...current, ""])}
+              disabled={suggestions.length >= 10}
+            >
+              ＋ 添加一条建议
+            </button>
+            <label className="feedback-upload">
+              <span>附件（可选，最多 5 个，单个不超过 8 MB）</span>
+              <input
+                type="file"
+                multiple
+                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip"
+                onChange={(event) => setAttachments(Array.from(event.target.files || []).slice(0, 5))}
+              />
+            </label>
+            {attachments.length ? (
+              <ul className="feedback-file-list">
+                {attachments.map((file) => <li key={`${file.name}-${file.size}`}>{file.name}</li>)}
+              </ul>
+            ) : null}
+            {message ? <p className="form-error" role="alert">{message}</p> : null}
+            <button className="download-primary" type="submit" disabled={status === "submitting"}>
+              {status === "submitting" ? "正在提交…" : "提交建议"}
+            </button>
+          </form>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function Drawer({ state, onClose }: { state: DrawerState | null; onClose: () => void }) {
   const [activeTab, setActiveTab] = useState(() => state?.tabs?.[0]?.id || "");
 
@@ -583,34 +721,37 @@ function Drawer({ state, onClose }: { state: DrawerState | null; onClose: () => 
         aria-label={state.title}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="drawer-head">
-          <div>
-            <div className="eyebrow">{state.eyebrow}</div>
-            <h2>{state.title}</h2>
-            <p>{state.description}</p>
+        <div className="drawer-sticky-shell">
+          <div className="drawer-head">
+            <div>
+              <div className="eyebrow">{state.eyebrow}</div>
+              <h2>{state.title}</h2>
+              <p>{state.description}</p>
+            </div>
+            <button type="button" className="close-button" onClick={onClose} aria-label="关闭详情">
+              关闭
+            </button>
           </div>
-          <button type="button" className="close-button" onClick={onClose} aria-label="关闭详情">
-            关闭
-          </button>
+          {state.tabs?.length ? (
+            <div className="drawer-tabs" role="tablist" aria-label="项目角色">
+              {state.tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === tab.id}
+                  className={activeTab === tab.id ? "active" : ""}
+                  onClick={() => setActiveTab(tab.id)}
+                >
+                  {tab.label}
+                  <span>{tab.items?.length || tab.groups?.reduce((total, group) => total + group.items.length, 0) || 0}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
-        {state.tabs?.length ? (
-          <div className="drawer-tabs" role="tablist" aria-label="项目角色">
-            {state.tabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === tab.id}
-                className={activeTab === tab.id ? "active" : ""}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                {tab.label}
-                <span>{tab.items?.length || tab.groups?.reduce((total, group) => total + group.items.length, 0) || 0}</span>
-              </button>
-            ))}
-          </div>
-        ) : null}
-        {visibleGroups.length ? (
+        <div className="drawer-scroll-region">
+          {visibleGroups.length ? (
           <div className="drawer-table-scroll grouped-project-list">
             <table className="drawer-project-table grouped-unified-table">
               <thead>
@@ -672,7 +813,8 @@ function Drawer({ state, onClose }: { state: DrawerState | null; onClose: () => 
               <div className="empty-state">当前筛选条件下没有记录。</div>
             )}
           </div>
-        )}
+          )}
+        </div>
       </aside>
     </div>
   );
@@ -913,6 +1055,7 @@ export default function DashboardClient() {
   const [error, setError] = useState("");
   const [drawer, setDrawer] = useState<DrawerState | null>(null);
   const [downloadOpen, setDownloadOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [methodStatusFilter, setMethodStatusFilter] = useState<Set<string>>(new Set(["1", "1-1", "2", "3", "3-1", "4"]));
   const [ownerMethodFilter, setOwnerMethodFilter] = useState<Set<string>>(new Set());
   const [ownerSearch, setOwnerSearch] = useState("");
@@ -1352,6 +1495,12 @@ export default function DashboardClient() {
         data: reductionComparison.map((row) => Number(row.averageActualAnnualReduction.toFixed(2))),
         barMaxWidth: 38,
         itemStyle: { color: "#147d70" },
+        label: {
+          show: true,
+          position: "top",
+          color: "#31403d",
+          formatter: (params: { value?: unknown }) => compactNumber(Number(params.value || 0), 0),
+        },
       },
       {
         name: "预计年均减排量达成率",
@@ -1613,13 +1762,16 @@ export default function DashboardClient() {
       };
     });
   const snapshotDate = data.generatedAt.slice(0, 10);
-  const latestTradeRow = data.trades.at(-1);
+  const bulletinDateValue = new Date(`${snapshotDate}T00:00:00Z`);
+  bulletinDateValue.setUTCDate(bulletinDateValue.getUTCDate() - 1);
+  const bulletinDate = bulletinDateValue.toISOString().slice(0, 10);
+  const bulletinTradeRow = data.trades.find((row) => row.date === bulletinDate);
   const previousTradeWithPrice = data.trades
-    .slice(0, -1)
+    .filter((row) => row.date < bulletinDate)
     .reverse()
     .find((row) => row.price != null && row.price > 0);
-  const latestPriceChange = latestTradeRow?.price != null && previousTradeWithPrice?.price
-    ? (latestTradeRow.price - previousTradeWithPrice.price) / previousTradeWithPrice.price
+  const latestPriceChange = bulletinTradeRow?.price != null && previousTradeWithPrice?.price
+    ? (bulletinTradeRow.price - previousTradeWithPrice.price) / previousTradeWithPrice.price
     : null;
   const latestRegisteredProjects = data.projects.filter(
     (row) => row.categoryCode === "2" && row.projectFirstSeenDate === snapshotDate,
@@ -1658,7 +1810,10 @@ export default function DashboardClient() {
           <a href="#owners">项目业主</a>
           <a href="#institutions">审定与核查</a>
         </nav>
-        <button type="button" className="download-trigger" onClick={() => setDownloadOpen(true)}>下载数据</button>
+        <div className="header-actions">
+          <button type="button" className="feedback-trigger" onClick={() => setFeedbackOpen(true)}>建议反馈</button>
+          <button type="button" className="download-trigger" onClick={() => setDownloadOpen(true)}>下载数据</button>
+        </div>
       </header>
 
       <main className="dashboard-shell">
@@ -1679,30 +1834,30 @@ export default function DashboardClient() {
               <div className="eyebrow">LATEST BULLETIN</div>
               <h2 id="latest-news-title">最新资讯</h2>
             </div>
-            <span>数据更新于 {snapshotDate}</span>
+            <span>资讯日期 {bulletinDate}</span>
           </div>
           <div className="latest-news-grid">
             <article>
               <div className="news-label">市场交易</div>
               <p>
-                {latestTradeRow && latestTradeRow.volume > 0 ? (
+                {bulletinTradeRow && bulletinTradeRow.volume > 0 ? (
                   <>
-                    {latestTradeRow.date}，全国 CCER 市场成交量 <strong>{exactNumber(latestTradeRow.volume, 0)} 吨</strong>，
-                    成交额 <strong>{exactNumber(latestTradeRow.turnover, 2)} 元</strong>，成交均价
-                    <strong> {exactNumber(latestTradeRow.price || 0, 2)} 元/吨</strong>
+                    {bulletinDate}，全国 CCER 市场成交量 <strong>{exactNumber(bulletinTradeRow.volume, 0)} 吨</strong>，
+                    成交额 <strong>{exactNumber(bulletinTradeRow.turnover, 2)} 元</strong>，成交均价
+                    <strong> {exactNumber(bulletinTradeRow.price || 0, 2)} 元/吨</strong>
                     {latestPriceChange == null ? "。" : (
                       <>，较前一交易日<strong>{latestPriceChange > 0 ? "上涨" : latestPriceChange < 0 ? "下跌" : "持平"} {Math.abs(latestPriceChange * 100).toFixed(2)}%</strong>。</>
                     )}
                   </>
                 ) : (
-                  <>{latestTradeRow?.date || snapshotDate}无成交。</>
+                  <>{bulletinDate}无成交。</>
                 )}
               </p>
             </article>
             <article>
               <div className="news-label">项目开发</div>
               <p>
-                {snapshotDate}新登记项目 <strong>{latestRegisteredProjects.length} 个</strong>
+                {bulletinDate}新登记项目 <strong>{latestRegisteredProjects.length} 个</strong>
                 {latestProjectMethods.length ? <>，其中{latestProjectMethods.map((row, index) => (
                   <Fragment key={row.methodology}>{index ? "，" : ""}{row.methodology} <strong>{row.count} 个</strong></Fragment>
                 ))}</> : ""}；新登记减排量项目 <strong>{latestRegisteredReductions.length} 个</strong>，
@@ -2321,6 +2476,7 @@ export default function DashboardClient() {
       </footer>
 
       <DownloadDialog open={downloadOpen} onClose={() => setDownloadOpen(false)} />
+      <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
       <Drawer key={drawer?.title || "closed"} state={drawer} onClose={() => setDrawer(null)} />
     </>
   );
