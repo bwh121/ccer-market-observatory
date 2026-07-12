@@ -20,7 +20,7 @@ test("server-renders the CCER research dashboard shell", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>全国 CCER 市场研究观测站<\/title>/);
+  assert.match(html, /<title>全国温室气体自愿减排交易市场（CCER）信息追踪<\/title>/);
   assert.match(html, /全国 CCER 交易、项目开发/);
   assert.match(html, /http:\/\/localhost:3000\/og\.png/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
@@ -29,6 +29,10 @@ test("server-renders the CCER research dashboard shell", async () => {
   assert.match(dashboardSource, /建议反馈/);
   assert.match(dashboardSource, /const bulletinDate/);
   assert.match(dashboardSource, /\{bulletinDate\}新登记项目/);
+  assert.match(dashboardSource, /各状态项目数量（个）/);
+  assert.match(dashboardSource, /各状态预计年均减排量（tCO₂e）/);
+  assert.match(dashboardSource, /累计登记减排量（tCO₂e）/);
+  assert.match(dashboardSource, /单个项目年均减排量情况/);
   assert.match(dashboardSource, /label:\s*\{[\s\S]*?show:\s*true,[\s\S]*?position:\s*"top"/);
 });
 

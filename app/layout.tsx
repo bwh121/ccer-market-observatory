@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import "./globals.css";
 
-const title = "全国 CCER 市场研究观测站";
+const title = "全国温室气体自愿减排交易市场（CCER）信息追踪";
 const description = "全国 CCER 交易、项目开发、项目业主及审定核查机构的交互式研究仪表板。";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -22,7 +22,7 @@ export async function generateMetadata(): Promise<Metadata> {
       title,
       description,
       url: baseUrl,
-      images: [{ url: imageUrl, width: 1200, height: 800, alt: "全国 CCER 市场研究观测站数据可视化" }],
+      images: [{ url: imageUrl, width: 1200, height: 800, alt: "全国温室气体自愿减排交易市场（CCER）信息追踪数据可视化" }],
     },
     twitter: {
       card: "summary_large_image",

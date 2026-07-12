@@ -5,6 +5,12 @@ import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { EChart, echarts } from "./components/EChart";
 
+type DashboardBuildEnv = { BASE_URL?: string; VITE_STATIC_GITHUB?: string };
+const BUILD_ENV = (import.meta as ImportMeta & { env?: DashboardBuildEnv }).env || {};
+const SITE_BASE = BUILD_ENV.BASE_URL || "/";
+const IS_GITHUB_PAGES = BUILD_ENV.VITE_STATIC_GITHUB === "true";
+const localAsset = (path: string) => `${SITE_BASE.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
+
 type Trade = {
   date: string;
   volume: number;
@@ -470,6 +476,10 @@ function DownloadDialog({ open, onClose }: { open: boolean; onClose: () => void 
     event.preventDefault();
     setStatus("submitting");
     setMessage("");
+    if (IS_GITHUB_PAGES) {
+      setStatus("ready");
+      return;
+    }
     try {
       const response = await fetch("/api/download-request", {
         method: "POST",
@@ -500,7 +510,7 @@ function DownloadDialog({ open, onClose }: { open: boolean; onClose: () => void 
           <div className="download-ready">
             <strong>信息已提交</strong>
             <p>文件包含交易数据、项目详情、减排量明细及相关数据字典。</p>
-            <a className="download-primary" href="/downloads/ccer-national-market-data-latest.xlsx" download="CCER全国市场数据汇总_最新.xlsx">
+            <a className="download-primary" href={localAsset("downloads/ccer-national-market-data-latest.xlsx")} download="CCER全国市场数据汇总_最新.xlsx">
               下载 Excel
             </a>
           </div>
@@ -605,6 +615,18 @@ function FeedbackDialog({ open, onClose }: { open: boolean; onClose: () => void 
     }
     setStatus("submitting");
     setMessage("");
+    if (IS_GITHUB_PAGES) {
+      const body = [
+        ...validSuggestions.map((item, index) => `## 建议 ${index + 1}\n\n${item}`),
+        attachments.length
+          ? "## 附件说明\n\n请在 GitHub Issue 编辑器中拖入需要附加的图片或文件。"
+          : "",
+      ].filter(Boolean).join("\n\n");
+      const issueUrl = `https://github.com/bwh121/ccer-market-observatory/issues/new?title=${encodeURIComponent("CCER 信息追踪建议反馈")}&body=${encodeURIComponent(body)}`;
+      window.open(issueUrl, "_blank", "noopener,noreferrer");
+      setStatus("success");
+      return;
+    }
     try {
       const form = new FormData();
       validSuggestions.forEach((item) => form.append("message", item));
@@ -633,7 +655,7 @@ function FeedbackDialog({ open, onClose }: { open: boolean; onClose: () => void 
         {status === "success" ? (
           <div className="feedback-success">
             <strong>谢谢你的建议</strong>
-            <p>反馈已经安全保存，作者可以在专属管理页面查看。</p>
+            <p>{IS_GITHUB_PAGES ? "已打开 GitHub 反馈页面；如有附件，请在该页面中拖入后提交。" : "反馈已经安全保存，作者可以在专属管理页面查看。"}</p>
             <div className="feedback-success-actions">
               <button type="button" className="download-primary" onClick={reset}>继续提交建议</button>
               <button type="button" className="secondary-button" onClick={close}>关闭</button>
@@ -675,6 +697,7 @@ function FeedbackDialog({ open, onClose }: { open: boolean; onClose: () => void 
                 onChange={(event) => setAttachments(Array.from(event.target.files || []).slice(0, 5))}
               />
             </label>
+            {IS_GITHUB_PAGES ? <p className="feedback-static-note">GitHub Pages 镜像将在反馈页面中继续添加附件。</p> : null}
             {attachments.length ? (
               <ul className="feedback-file-list">
                 {attachments.map((file) => <li key={`${file.name}-${file.size}`}>{file.name}</li>)}
@@ -837,7 +860,7 @@ function ChinaMaps({
 
   useEffect(() => {
     let active = true;
-    fetch("/china.json")
+    fetch(localAsset("china.json"))
       .then((response) => response.json())
       .then((geoJson) => {
         if (!active) return;
@@ -1067,7 +1090,7 @@ export default function DashboardClient() {
   const [relationInstitutionLimit, setRelationInstitutionLimit] = useState("12");
 
   useEffect(() => {
-    fetch("/data/dashboard.json")
+    fetch(localAsset("data/dashboard.json"))
       .then((response) => {
         if (!response.ok) throw new Error("数据文件读取失败");
         return response.json();
@@ -1414,7 +1437,7 @@ export default function DashboardClient() {
     },
     yAxis: {
       type: "value",
-      name: "累计登记减排量（吨）",
+      name: "累计登记减排量（tCO₂e）",
       nameTextStyle: { color: "#596966" },
       axisLabel: { formatter: (value: number) => compactNumber(value, 0), color: "#596966" },
       splitLine: { lineStyle: { color: "#e7edeb" } },
@@ -1449,7 +1472,7 @@ export default function DashboardClient() {
   const reductionComparisonOption = useMemo<EChartsOption>(() => ({
     color: ["#147d70", "#9b4d5b"],
     grid: { left: 74, right: 76, top: 58, bottom: 112 },
-    legend: { top: 0, data: ["平均单个项目年均减排量", "预计年均减排量达成率"], textStyle: { color: "#475754", fontSize: 10 } },
+    legend: { top: 0, data: ["单个项目年均减排量", "预计年均减排量达成率"], textStyle: { color: "#475754", fontSize: 10 } },
     tooltip: {
       trigger: "axis",
       axisPointer: { type: "cross" },
@@ -1459,7 +1482,7 @@ export default function DashboardClient() {
         if (!summary) return "";
         return [
           `<strong>${summary.methodology}</strong>`,
-          `平均单个项目年均减排量：${exactNumber(summary.averageActualAnnualReduction, 0)} 吨/年`,
+          `单个项目年均减排量：${exactNumber(summary.averageActualAnnualReduction, 0)} tCO₂e`,
           `方法学实际登记年均减排量合计：${exactNumber(summary.actualAnnualAverage, 0)} 吨/年`,
           `预计年均减排量：${exactNumber(summary.expectedAnnual, 0)} 吨/年`,
           `预计年均减排量达成率：${(summary.achievementRate * 100).toFixed(1)}%`,
@@ -1475,7 +1498,7 @@ export default function DashboardClient() {
     yAxis: [
       {
         type: "value",
-        name: "平均单项目年均减排量（吨/年）",
+        name: "单个项目年均减排量（tCO₂e）",
         nameTextStyle: { color: "#596966" },
         axisLabel: { formatter: (value: number) => compactNumber(value, 0), color: "#596966" },
         splitLine: { lineStyle: { color: "#e7edeb" } },
@@ -1490,7 +1513,7 @@ export default function DashboardClient() {
     ],
     series: [
       {
-        name: "平均单个项目年均减排量",
+        name: "单个项目年均减排量",
         type: "bar",
         data: reductionComparison.map((row) => Number(row.averageActualAnnualReduction.toFixed(2))),
         barMaxWidth: 38,
@@ -1803,7 +1826,7 @@ export default function DashboardClient() {
   return (
     <>
       <header className="site-header">
-        <a className="header-title" href="#">全国自愿减排交易市场（CCER）信息追踪</a>
+        <a className="header-title" href="#">全国温室气体自愿减排交易市场（CCER）信息追踪</a>
         <nav aria-label="页面章节">
           <a href="#trade">交易情况</a>
           <a href="#development">项目开发</a>
@@ -1819,7 +1842,7 @@ export default function DashboardClient() {
       <main className="dashboard-shell">
         <section className="hero">
           <div className="hero-copy hero-centered">
-            <h1>全国自愿减排交易市场（CCER）信息追踪</h1>
+            <h1>全国温室气体自愿减排交易市场（CCER）信息追踪</h1>
             <p className="hero-byline">
               <span>数据时间：{data.dataThrough}</span>
               <span>数据来源：全国温室气体自愿减排交易系统、全国温室气体自愿减排注册登记系统</span>
@@ -1938,7 +1961,7 @@ export default function DashboardClient() {
           </div>
           <div className="two-column-grid">
             <article className="panel">
-              <PanelTitle label="FIGURE 02" title="各状态项目数量" note="点击柱子查看该状态下的项目清单。" />
+              <PanelTitle label="FIGURE 02" title="各状态项目数量（个）" note="点击柱子查看该状态下的项目清单。" />
               <EChart
                 option={statusCountOption}
                 className="medium-chart"
@@ -1953,7 +1976,7 @@ export default function DashboardClient() {
               />
             </article>
             <article className="panel">
-              <PanelTitle label="FIGURE 03" title="各状态预计年均减排量" note="点击柱子查看项目及其预计年均减排量。" />
+              <PanelTitle label="FIGURE 03" title="各状态预计年均减排量（tCO₂e）" note="点击柱子查看项目及其预计年均减排量。" />
               <EChart
                 option={statusExpectedOption}
                 className="medium-chart"
@@ -2016,7 +2039,7 @@ export default function DashboardClient() {
             <StatusFilterBar options={statusOptions} selected={methodStatusFilter} onChange={setMethodStatusFilter} />
             <div className="two-column-grid method-chart-grid">
             <article className="panel">
-              <PanelTitle label="FIGURE 04" title="各方法学项目数量" note="按所选项目状态汇总并动态降序排列；点击横向柱查看项目。" />
+              <PanelTitle label="FIGURE 04" title="各方法学项目数量（个）" note="按所选项目状态汇总并动态降序排列；点击横向柱查看项目。" />
               <EChart
                 option={methodCountOption}
                 className="method-chart"
@@ -2030,7 +2053,7 @@ export default function DashboardClient() {
               />
             </article>
             <article className="panel">
-              <PanelTitle label="FIGURE 05" title="各方法学预计年均减排量" note="按所选项目状态汇总并动态降序排列；柱尾展示汇总值。" />
+              <PanelTitle label="FIGURE 05" title="各方法学预计年均减排量（tCO₂e）" note="按所选项目状态汇总并动态降序排列；柱尾展示汇总值。" />
               <EChart
                 option={methodExpectedOption}
                 className="method-chart"
@@ -2077,18 +2100,18 @@ export default function DashboardClient() {
             <article className="panel">
               <PanelTitle
                 label="FIGURE 07"
-                title="平均单个项目年均减排量情况"
+                title="单个项目年均减排量情况"
                 note="柱为各方法学下项目实际登记年均减排量的平均值；折线仍为实际登记年均减排量汇总值 ÷ 预计年均减排量汇总值。"
               />
               <EChart
                 option={reductionComparisonOption}
                 className="comparison-chart half-chart"
-                ariaLabel="各方法学平均单个项目年均减排量与预计年均减排量达成率组合图"
+                ariaLabel="各方法学单个项目年均减排量与预计年均减排量达成率组合图"
                 onClick={(params) => {
                   const name = String(params.name || "");
                   const row = reductionComparison.find((item) => item.methodology === name);
                   if (row) openProjectTable(
-                    `${name} · 平均单个项目年均减排量`,
+                    `${name} · 单个项目年均减排量`,
                     name,
                     row.rows,
                     ["预计年均减排量", "实际登记减排量", "登记年份", "实际登记年均减排量", "预计年均减排量达成率"],
