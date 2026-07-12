@@ -33,7 +33,13 @@ jobs:
           node-version: 24
           cache: pnpm
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        # pnpm 11 blocks native postinstall scripts by default in CI. Install
+        # first without scripts, approve the exact dependency set, then rebuild
+        # so Vite/esbuild/sharp/workerd binaries are available to the build.
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm approve-builds --all
+          pnpm rebuild
       - name: Build GitHub Pages mirror
         run: pnpm run build:github-pages
       - name: Configure Pages
