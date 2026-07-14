@@ -1,0 +1,78 @@
+name: Roll back GitHub Pages
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing production tag, for example prod-2026.07.14-4c3b56f
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  rollback:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout selected production tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
+      - name: Validate release tag
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [[ "$RELEASE_TAG" != prod-* ]]; then
+            echo "Only immutable prod-* release tags can be deployed by this workflow."
+            exit 1
+          fi
+          git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}" >/dev/null
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm approve-builds --all
+          pnpm rebuild
+      - name: Validate selected release
+        run: |
+          pnpm run lint
+          pnpm exec tsc --noEmit
+          pnpm run build
+          node --test tests/rendered-html.test.mjs
+      - name: Build GitHub Pages mirror
+        run: pnpm run build:github-pages
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: github-pages-dist
+      - name: Deploy selected release
+        id: deployment
+        uses: actions/deploy-pages@v4
+      - name: Write rollback summary
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          echo "### Rollback deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "Deployed release tag: `$RELEASE_TAG`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Resolved commit: `$(git rev-parse HEAD)`" >> "$GITHUB_STEP_SUMMARY"

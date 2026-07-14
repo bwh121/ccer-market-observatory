@@ -1,4 +1,4 @@
-name: Deploy GitHub Pages
+name: Deploy GitHub Pages (production)
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -40,6 +40,14 @@ jobs:
           pnpm install --frozen-lockfile --ignore-scripts
           pnpm approve-builds --all
           pnpm rebuild
+      - name: Lint
+        run: pnpm run lint
+      - name: TypeScript check
+        run: pnpm exec tsc --noEmit
+      - name: Build production server
+        run: pnpm run build
+      - name: Test rendered HTML
+        run: node --test tests/rendered-html.test.mjs
       - name: Build GitHub Pages mirror
         run: pnpm run build:github-pages
       - name: Configure Pages
@@ -51,3 +59,16 @@ jobs:
       - name: Deploy Pages
         id: deployment
         uses: actions/deploy-pages@v4
+      - name: Create immutable production tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="prod-$(date -u +%Y.%m.%d)-${GITHUB_SHA:0:7}"
+          git tag -a "$TAG" "$GITHUB_SHA" -m "Production deployment $TAG"
+          git push origin "$TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "### Production release" >> "$GITHUB_STEP_SUMMARY"
+          echo "Deployed commit: `$GITHUB_SHA`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Release tag: `$TAG`" >> "$GITHUB_STEP_SUMMARY"
