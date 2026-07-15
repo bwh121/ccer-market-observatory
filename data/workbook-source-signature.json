@@ -1,5 +1,6 @@
 {
-  "version": 1,
-  "sha256": "1bdf6025e3fe4c0863b3343d0b2218672e43b6e2aa03e8972ec6431b16722691",
-  "updatedAt": "2026-07-15T14:05:52+08:00"
+  "version": 2,
+  "engine": "exceljs",
+  "sha256": "89b250606fd82cd55ecc2ec4e9324849d2e0ad40a7186b1f71cac6f2bf979a5e",
+  "updatedAt": "2026-07-15T23:53:57+08:00"
 }
