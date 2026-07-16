@@ -27,8 +27,14 @@ test("server-renders the CCER research dashboard shell", async () => {
 
   const dashboardSource = await readFile(new URL("../app/DashboardClient.tsx", import.meta.url), "utf8");
   assert.match(dashboardSource, /建议反馈/);
-  assert.match(dashboardSource, /const bulletinDate/);
-  assert.match(dashboardSource, /\{bulletinDate\}新登记项目/);
+  assert.match(dashboardSource, /const bulletinDate = data\.tradeSummary\.latestDate/);
+  assert.match(dashboardSource, /最新动态/);
+  assert.match(dashboardSource, /\{bulletinDate\}日，新登记项目/);
+  assert.match(dashboardSource, /上周（\{lastWeek\.start\}日至\{lastWeek\.end\}日）/);
+  assert.match(dashboardSource, /数据来源与说明/);
+  assert.match(dashboardSource, /联系作者/);
+  assert.match(dashboardSource, /wechat-author-qr\.png/);
+  assert.doesNotMatch(dashboardSource, /institutionSearch|输入机构名称/);
   assert.match(dashboardSource, /各状态项目数量（个）/);
   assert.match(dashboardSource, /各状态预计年均减排量（tCO₂e）/);
   assert.match(dashboardSource, /累计登记减排量（tCO₂e）/);
@@ -83,4 +89,7 @@ test("ships a complete and internally consistent dashboard dataset", async () =>
 
   const workbook = await stat(new URL("../public/downloads/ccer-national-market-data-latest.xlsx", import.meta.url));
   assert.ok(workbook.size > 100_000);
+
+  const authorQr = await stat(new URL("../public/wechat-author-qr.png", import.meta.url));
+  assert.ok(authorQr.size > 50_000);
 });

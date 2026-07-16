@@ -1,6 +1,7 @@
 "use client";
 
 import type { EChartsOption } from "echarts";
+import Image from "next/image";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { EChart, echarts } from "./components/EChart";
@@ -224,6 +225,35 @@ const exactNumber = (value: number, digits = 2) =>
 
 const sum = (rows: Project[], field: keyof Project) =>
   rows.reduce((total, row) => total + Number(row[field] || 0), 0);
+
+const shiftDate = (date: string, days: number) => {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+};
+
+const previousCalendarWeek = (date: string) => {
+  const value = new Date(`${date}T00:00:00Z`);
+  const weekday = value.getUTCDay() || 7;
+  const end = shiftDate(date, -weekday);
+  return { start: shiftDate(end, -6), end };
+};
+
+const summarizeProjectMethods = (rows: Project[]) =>
+  [...new Set(rows.map((row) => row.methodology))]
+    .map((methodology) => ({
+      methodology,
+      count: rows.filter((row) => row.methodology === methodology).length,
+    }))
+    .sort((a, b) => b.count - a.count || a.methodology.localeCompare(b.methodology, "zh-CN"));
+
+const summarizeReductionMethods = (rows: Project[]) =>
+  [...new Set(rows.map((row) => row.methodology))]
+    .map((methodology) => {
+      const methodRows = rows.filter((row) => row.methodology === methodology);
+      return { methodology, count: methodRows.length, amount: sum(methodRows, "actualReduction") };
+    })
+    .sort((a, b) => b.amount - a.amount || a.methodology.localeCompare(b.methodology, "zh-CN"));
 
 const uniqueProjects = (rows: Project[]) => {
   const score: Record<string, number> = { "4": 70, "2": 60, "3-1": 50, "1-1": 40, "3": 30, "1": 20, "6": 10 };
@@ -915,7 +945,11 @@ function ChinaMaps({
           type: "map",
           map: "ccer-china",
           roam: false,
-          zoom: 1.16,
+          zoom: 1.06,
+          left: 12,
+          right: 118,
+          top: 12,
+          bottom: 12,
           data: heatData,
           label: { show: false },
           itemStyle: { areaColor: "#ffffff", borderColor: "#a5b8b4", borderWidth: 0.7 },
@@ -981,9 +1015,9 @@ function ChinaMaps({
         type: "scatter",
         coordinateSystem: "geo",
         symbol: symbols[methodPosition % symbols.length],
-        symbolSize: 10,
-        itemStyle: { color: METHOD_COLORS[methodPosition % METHOD_COLORS.length], borderColor: "#ffffff", borderWidth: 0.8 },
-        emphasis: { scale: 1.8 },
+        symbolSize: 5,
+        itemStyle: { color: METHOD_COLORS[methodPosition % METHOD_COLORS.length], borderColor: "#ffffff", borderWidth: 0.5 },
+        emphasis: { scale: 2 },
         data: pointRows
           .filter((row) => row.methodology === method)
           .map((row) => ({
@@ -1085,7 +1119,6 @@ export default function DashboardClient() {
   const [ownerPage, setOwnerPage] = useState(1);
   const [ownerSortKey, setOwnerSortKey] = useState<OwnerSortKey>("projectCount");
   const [ownerSortDirection, setOwnerSortDirection] = useState<SortDirection>("desc");
-  const [institutionSearch, setInstitutionSearch] = useState("");
   const [relationLimit, setRelationLimit] = useState("12");
   const [relationInstitutionLimit, setRelationInstitutionLimit] = useState("12");
 
@@ -1668,9 +1701,8 @@ export default function DashboardClient() {
           ...[...bucket.verify.values()].map((project) => ({ role: "核查", project })),
         ],
       }))
-      .filter((row) => row.name.includes(institutionSearch.trim()))
       .sort((a, b) => b.totalCount - a.totalCount || a.name.localeCompare(b.name, "zh-CN"));
-  }, [data, institutionSearch]);
+  }, [data]);
 
   const relationData = useMemo(() => {
     if (!data) return { owners: [], institutions: [], cells: [], maxValue: 1 };
@@ -1785,9 +1817,7 @@ export default function DashboardClient() {
       };
     });
   const snapshotDate = data.generatedAt.slice(0, 10);
-  const bulletinDateValue = new Date(`${snapshotDate}T00:00:00Z`);
-  bulletinDateValue.setUTCDate(bulletinDateValue.getUTCDate() - 1);
-  const bulletinDate = bulletinDateValue.toISOString().slice(0, 10);
+  const bulletinDate = data.tradeSummary.latestDate;
   const bulletinTradeRow = data.trades.find((row) => row.date === bulletinDate);
   const previousTradeWithPrice = data.trades
     .filter((row) => row.date < bulletinDate)
@@ -1802,18 +1832,32 @@ export default function DashboardClient() {
   const latestRegisteredReductions = data.projects.filter(
     (row) => row.categoryCode === "4" && row.reductionRegistrationDate === snapshotDate,
   );
-  const latestProjectMethods = [...new Set(latestRegisteredProjects.map((row) => row.methodology))]
-    .map((methodology) => ({
-      methodology,
-      count: latestRegisteredProjects.filter((row) => row.methodology === methodology).length,
-    }))
-    .sort((a, b) => b.count - a.count || a.methodology.localeCompare(b.methodology, "zh-CN"));
-  const latestReductionMethods = [...new Set(latestRegisteredReductions.map((row) => row.methodology))]
-    .map((methodology) => {
-      const rows = latestRegisteredReductions.filter((row) => row.methodology === methodology);
-      return { methodology, count: rows.length, amount: sum(rows, "actualReduction") };
-    })
-    .sort((a, b) => b.amount - a.amount || a.methodology.localeCompare(b.methodology, "zh-CN"));
+  const latestProjectMethods = summarizeProjectMethods(latestRegisteredProjects);
+  const latestReductionMethods = summarizeReductionMethods(latestRegisteredReductions);
+  const lastWeek = previousCalendarWeek(snapshotDate);
+  const precedingWeek = {
+    start: shiftDate(lastWeek.start, -7),
+    end: shiftDate(lastWeek.end, -7),
+  };
+  const lastWeekTrades = data.trades.filter((row) => row.date >= lastWeek.start && row.date <= lastWeek.end);
+  const precedingWeekTrades = data.trades.filter((row) => row.date >= precedingWeek.start && row.date <= precedingWeek.end);
+  const lastWeekVolume = lastWeekTrades.reduce((total, row) => total + row.volume, 0);
+  const lastWeekTurnover = lastWeekTrades.reduce((total, row) => total + row.turnover, 0);
+  const precedingWeekVolume = precedingWeekTrades.reduce((total, row) => total + row.volume, 0);
+  const precedingWeekTurnover = precedingWeekTrades.reduce((total, row) => total + row.turnover, 0);
+  const lastWeekPrice = lastWeekVolume > 0 ? lastWeekTurnover / lastWeekVolume : null;
+  const precedingWeekPrice = precedingWeekVolume > 0 ? precedingWeekTurnover / precedingWeekVolume : null;
+  const lastWeekPriceChange = lastWeekPrice != null && precedingWeekPrice != null
+    ? (lastWeekPrice - precedingWeekPrice) / precedingWeekPrice
+    : null;
+  const lastWeekRegisteredProjects = data.projects.filter(
+    (row) => row.categoryCode === "2" && row.projectFirstSeenDate >= lastWeek.start && row.projectFirstSeenDate <= lastWeek.end,
+  );
+  const lastWeekRegisteredReductions = data.projects.filter(
+    (row) => row.categoryCode === "4" && row.reductionRegistrationDate >= lastWeek.start && row.reductionRegistrationDate <= lastWeek.end,
+  );
+  const lastWeekProjectMethods = summarizeProjectMethods(lastWeekRegisteredProjects);
+  const lastWeekReductionMethods = summarizeReductionMethods(lastWeekRegisteredReductions);
   const handleOwnerSort = (key: OwnerSortKey) => {
     if (key === ownerSortKey) setOwnerSortDirection((direction) => (direction === "desc" ? "asc" : "desc"));
     else {
@@ -1831,7 +1875,9 @@ export default function DashboardClient() {
           <a href="#trade">交易情况</a>
           <a href="#development">项目开发</a>
           <a href="#owners">项目业主</a>
-          <a href="#institutions">审定与核查</a>
+          <a href="#institutions">审定与核查机构</a>
+          <a href="#data-sources">数据来源与说明</a>
+          <a href="#contact-author">联系作者</a>
         </nav>
         <div className="header-actions">
           <button type="button" className="feedback-trigger" onClick={() => setFeedbackOpen(true)}>建议反馈</button>
@@ -1843,21 +1889,16 @@ export default function DashboardClient() {
         <section className="hero">
           <div className="hero-copy hero-centered">
             <h1>全国温室气体自愿减排交易市场（CCER）信息追踪</h1>
-            <p className="hero-byline">
-              <span>数据时间：{data.dataThrough}</span>
-              <span>数据来源：全国温室气体自愿减排交易系统、全国温室气体自愿减排注册登记系统</span>
-              <span>作者：逃跑大魔王</span>
-            </p>
           </div>
         </section>
 
-        <section className="latest-news" aria-labelledby="latest-news-title">
+        <section className="latest-news" aria-labelledby="latest-updates-title">
           <div className="latest-news-heading">
             <div>
               <div className="eyebrow">LATEST BULLETIN</div>
-              <h2 id="latest-news-title">最新资讯</h2>
+              <h2 id="latest-updates-title">最新动态</h2>
             </div>
-            <span>资讯日期 {bulletinDate}</span>
+            <span>最新日期 {bulletinDate}日</span>
           </div>
           <div className="latest-news-grid">
             <article>
@@ -1865,7 +1906,7 @@ export default function DashboardClient() {
               <p>
                 {bulletinTradeRow && bulletinTradeRow.volume > 0 ? (
                   <>
-                    {bulletinDate}，全国 CCER 市场成交量 <strong>{exactNumber(bulletinTradeRow.volume, 0)} 吨</strong>，
+                    {bulletinDate}日，全国 CCER 市场成交量 <strong>{exactNumber(bulletinTradeRow.volume, 0)} 吨</strong>，
                     成交额 <strong>{exactNumber(bulletinTradeRow.turnover, 2)} 元</strong>，成交均价
                     <strong> {exactNumber(bulletinTradeRow.price || 0, 2)} 元/吨</strong>
                     {latestPriceChange == null ? "。" : (
@@ -1873,19 +1914,44 @@ export default function DashboardClient() {
                     )}
                   </>
                 ) : (
-                  <>{bulletinDate}无成交。</>
+                  <>{bulletinDate}日，全国 CCER 市场无成交。</>
+                )}
+              </p>
+              <p className="weekly-update">
+                {lastWeekVolume > 0 ? (
+                  <>
+                    上周（{lastWeek.start}日至{lastWeek.end}日），全国 CCER 市场累计成交量
+                    <strong> {exactNumber(lastWeekVolume, 0)} 吨</strong>，累计成交额
+                    <strong> {exactNumber(lastWeekTurnover, 2)} 元</strong>，成交均价
+                    <strong> {exactNumber(lastWeekPrice || 0, 2)} 元/吨</strong>
+                    {lastWeekPriceChange == null ? "。" : (
+                      <>，较前一周<strong>{lastWeekPriceChange > 0 ? "上涨" : lastWeekPriceChange < 0 ? "下跌" : "持平"} {Math.abs(lastWeekPriceChange * 100).toFixed(2)}%</strong>。</>
+                    )}
+                  </>
+                ) : (
+                  <>上周（{lastWeek.start}日至{lastWeek.end}日），全国 CCER 市场无成交。</>
                 )}
               </p>
             </article>
             <article>
               <div className="news-label">项目开发</div>
               <p>
-                {bulletinDate}新登记项目 <strong>{latestRegisteredProjects.length} 个</strong>
+                {bulletinDate}日，新登记项目 <strong>{latestRegisteredProjects.length} 个</strong>
                 {latestProjectMethods.length ? <>，其中{latestProjectMethods.map((row, index) => (
                   <Fragment key={row.methodology}>{index ? "，" : ""}{row.methodology} <strong>{row.count} 个</strong></Fragment>
                 ))}</> : ""}；新登记减排量项目 <strong>{latestRegisteredReductions.length} 个</strong>，
                 共登记减排量 <strong>{exactNumber(sum(latestRegisteredReductions, "actualReduction"), 0)} 吨</strong>
                 {latestReductionMethods.length ? <>，其中{latestReductionMethods.map((row, index) => (
+                  <Fragment key={row.methodology}>{index ? "，" : ""}{row.methodology} <strong>{row.count} 个、{exactNumber(row.amount, 0)} 吨</strong></Fragment>
+                ))}</> : ""}。
+              </p>
+              <p className="weekly-update">
+                上周（{lastWeek.start}日至{lastWeek.end}日），新登记项目 <strong>{lastWeekRegisteredProjects.length} 个</strong>
+                {lastWeekProjectMethods.length ? <>，其中{lastWeekProjectMethods.map((row, index) => (
+                  <Fragment key={row.methodology}>{index ? "，" : ""}{row.methodology} <strong>{row.count} 个</strong></Fragment>
+                ))}</> : ""}；新登记减排量项目 <strong>{lastWeekRegisteredReductions.length} 个</strong>，
+                共登记减排量 <strong>{exactNumber(sum(lastWeekRegisteredReductions, "actualReduction"), 0)} 吨</strong>
+                {lastWeekReductionMethods.length ? <>，其中{lastWeekReductionMethods.map((row, index) => (
                   <Fragment key={row.methodology}>{index ? "，" : ""}{row.methodology} <strong>{row.count} 个、{exactNumber(row.amount, 0)} 吨</strong></Fragment>
                 ))}</> : ""}。
               </p>
@@ -2338,12 +2404,6 @@ export default function DashboardClient() {
               label="TABLE 03"
               title="审定与核查机构业务情况"
               note={`共识别 ${institutionRows.length} 家机构；同一项目中的审定与核查角色分别统计，默认按合计降序。`}
-              controls={
-                <label className="search-control">
-                  <span>检索</span>
-                  <input value={institutionSearch} onChange={(event) => setInstitutionSearch(event.target.value)} placeholder="输入机构名称" />
-                </label>
-              }
             />
             <div className="table-scroll institutions-table">
               <table>
@@ -2448,10 +2508,10 @@ export default function DashboardClient() {
           </article>
         </section>
 
-        <section className="methodology-notes" aria-labelledby="methodology-title">
+        <section id="data-sources" className="methodology-notes" aria-labelledby="data-sources-title">
           <div>
             <div className="eyebrow">METHODOLOGY & SOURCES</div>
-            <h2 id="methodology-title">指标口径与数据来源</h2>
+            <h2 id="data-sources-title">数据来源与说明</h2>
           </div>
           <div className="definition-grid">
             <article>
@@ -2491,11 +2551,40 @@ export default function DashboardClient() {
             ))}
           </div>
         </section>
+
+        <section id="contact-author" className="contact-author" aria-labelledby="contact-author-title">
+          <div className="contact-author-copy">
+            <div className="eyebrow">CONTACT & NOTICE</div>
+            <h2 id="contact-author-title">联系作者</h2>
+            <p className="author-name">作者：<strong>逃跑大魔王</strong></p>
+            <p>
+              本网站基于官方公开数据进行统计分析，尚在持续完善中。作者将尽力保证数据准确、功能完备，
+              但不对因使用本站数据产生的任何错误或后果承担责任。本站内容禁止商用。
+            </p>
+          </div>
+          <figure className="contact-qr">
+            <Image
+              src={localAsset("wechat-author-qr.png")}
+              alt="逃跑大魔王的微信二维码"
+              width={639}
+              height={637}
+              unoptimized
+            />
+            <figcaption>微信扫码联系作者</figcaption>
+          </figure>
+        </section>
       </main>
 
-      <footer>
-        <span>全国 CCER 市场研究数据门户</span>
-        <span>数据快照：{data.generatedAt.replace("T", " ")}</span>
+      <footer className="site-footer">
+        <div className="footer-brand">
+          <strong>© 2026 逃跑大魔王。保留所有权利。</strong>
+          <span>本站数据来源于官方公开渠道，原始数据相关权利归发布机构所有。</span>
+        </div>
+        <p>
+          本站原创的数据整理、指标设计、文字说明、图表与页面呈现受相关知识产权法律保护。
+          未经书面许可，禁止复制、镜像、抓取后再发布或用于商业用途；合理引用请注明作者及本站链接。
+        </p>
+        <span className="footer-snapshot">数据快照：{data.generatedAt.replace("T", " ")}</span>
       </footer>
 
       <DownloadDialog open={downloadOpen} onClose={() => setDownloadOpen(false)} />
