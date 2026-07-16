@@ -34,6 +34,7 @@ test("server-renders the CCER research dashboard shell", async () => {
   assert.match(dashboardSource, /数据来源与说明/);
   assert.match(dashboardSource, /联系作者/);
   assert.match(dashboardSource, /wechat-author-qr\.png/);
+  assert.doesNotMatch(dashboardSource, /from ["']next\/image["']/);
   assert.doesNotMatch(dashboardSource, /institutionSearch|输入机构名称/);
   assert.match(dashboardSource, /各状态项目数量（个）/);
   assert.match(dashboardSource, /各状态预计年均减排量（tCO₂e）/);

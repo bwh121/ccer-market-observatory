@@ -1,7 +1,6 @@
 "use client";
 
 import type { EChartsOption } from "echarts";
-import Image from "next/image";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { EChart, echarts } from "./components/EChart";
@@ -2563,12 +2562,13 @@ export default function DashboardClient() {
             </p>
           </div>
           <figure className="contact-qr">
-            <Image
+            {/* Keep the static GitHub Pages bundle independent of the Next image runtime. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
               src={localAsset("wechat-author-qr.png")}
               alt="逃跑大魔王的微信二维码"
               width={639}
               height={637}
-              unoptimized
             />
             <figcaption>微信扫码联系作者</figcaption>
           </figure>
