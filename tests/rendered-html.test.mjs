@@ -2,6 +2,15 @@ import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
 import test from "node:test";
 
+const HISTORICAL_REGISTRATION_BUCKET = "before-2026-07-11";
+const HISTORICAL_REGISTRATION_LABEL = "2026-07-11 前";
+const REGISTRATION_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function assertRegistrationBucket(date, label) {
+  assert.ok(date === HISTORICAL_REGISTRATION_BUCKET || REGISTRATION_DATE_PATTERN.test(date));
+  assert.equal(label, date === HISTORICAL_REGISTRATION_BUCKET ? HISTORICAL_REGISTRATION_LABEL : date);
+}
+
 async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
@@ -46,6 +55,12 @@ test("server-renders the CCER research dashboard shell", async () => {
 test("ships a complete and internally consistent dashboard dataset", async () => {
   const payload = JSON.parse(await readFile(new URL("../public/data/dashboard.json", import.meta.url), "utf8"));
   const map = JSON.parse(await readFile(new URL("../public/china.json", import.meta.url), "utf8"));
+  const projectRegistrationRegistry = JSON.parse(
+    await readFile(new URL("../data/project-registration-dates.json", import.meta.url), "utf8"),
+  );
+  const reductionRegistrationRegistry = JSON.parse(
+    await readFile(new URL("../data/reduction-registration-dates.json", import.meta.url), "utf8"),
+  );
 
   assert.equal(payload.trades.length, payload.quality.tradeRecords);
   assert.equal(payload.projects.length, payload.quality.projectRecords);
@@ -63,6 +78,14 @@ test("ships a complete and internally consistent dashboard dataset", async () =>
     .filter((row) => row.categoryCode === "4")
     .reduce((total, row) => total + row.actualReduction, 0);
   assert.equal(actualReduction, 21_775_733);
+  assert.equal(
+    Object.values(projectRegistrationRegistry).filter((date) => date === HISTORICAL_REGISTRATION_BUCKET).length,
+    40,
+  );
+  assert.equal(
+    Object.values(reductionRegistrationRegistry).filter((date) => date === HISTORICAL_REGISTRATION_BUCKET).length,
+    21,
+  );
 
   for (const project of payload.projects.filter((row) => row.categoryCode === "4")) {
     const expectedAverage = project.reductionYears > 0 ? project.actualReduction / project.reductionYears : 0;
@@ -73,8 +96,8 @@ test("ships a complete and internally consistent dashboard dataset", async () =>
       );
     }
     assert.equal(project.reductionYearLabels.length, project.reductionYears);
-    assert.equal(project.reductionRegistrationDate, "before-2026-07-11");
-    assert.equal(project.reductionRegistrationLabel, "2026-07-11 前");
+    assert.equal(project.reductionRegistrationDate, reductionRegistrationRegistry[project.snapshotKey]);
+    assertRegistrationBucket(project.reductionRegistrationDate, project.reductionRegistrationLabel);
     assert.ok(project.reductionYearLabels.every((year) => /^\d{4}$/.test(year)));
     assert.match(project.accountingPeriodStart, /^\d{4}-\d{2}-\d{2}$/);
     assert.match(project.accountingPeriodEnd, /^\d{4}-\d{2}-\d{2}$/);
@@ -84,8 +107,8 @@ test("ships a complete and internally consistent dashboard dataset", async () =>
     assert.match(project.creditingStart, /^\d{4}-\d{2}-\d{2}$/);
     assert.match(project.creditingEnd, /^\d{4}-\d{2}-\d{2}$/);
     assert.ok(project.projectLifetimeYears > 0);
-    assert.equal(project.projectFirstSeenDate, "before-2026-07-11");
-    assert.equal(project.projectFirstSeenLabel, "2026-07-11 前");
+    assert.equal(project.projectFirstSeenDate, projectRegistrationRegistry[project.snapshotKey]);
+    assertRegistrationBucket(project.projectFirstSeenDate, project.projectFirstSeenLabel);
   }
 
   const workbook = await stat(new URL("../public/downloads/ccer-national-market-data-latest.xlsx", import.meta.url));
