@@ -4,6 +4,7 @@ import type { EChartsOption } from "echarts";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { EChart, echarts } from "./components/EChart";
+import { previousCalendarWeek, shiftDate } from "./dateUtils";
 
 type DashboardBuildEnv = { BASE_URL?: string; VITE_STATIC_GITHUB?: string };
 const BUILD_ENV = (import.meta as ImportMeta & { env?: DashboardBuildEnv }).env || {};
@@ -224,19 +225,6 @@ const exactNumber = (value: number, digits = 2) =>
 
 const sum = (rows: Project[], field: keyof Project) =>
   rows.reduce((total, row) => total + Number(row[field] || 0), 0);
-
-const shiftDate = (date: string, days: number) => {
-  const value = new Date(`${date}T00:00:00Z`);
-  value.setUTCDate(value.getUTCDate() + days);
-  return value.toISOString().slice(0, 10);
-};
-
-const previousCalendarWeek = (date: string) => {
-  const value = new Date(`${date}T00:00:00Z`);
-  const weekday = value.getUTCDay() || 7;
-  const end = shiftDate(date, -weekday);
-  return { start: shiftDate(end, -6), end };
-};
 
 const summarizeProjectMethods = (rows: Project[]) =>
   [...new Set(rows.map((row) => row.methodology))]
@@ -1816,7 +1804,7 @@ export default function DashboardClient() {
       };
     });
   const snapshotDate = data.generatedAt.slice(0, 10);
-  const bulletinDate = data.tradeSummary.latestDate;
+  const bulletinDate = shiftDate(snapshotDate, -1);
   const bulletinTradeRow = data.trades.find((row) => row.date === bulletinDate);
   const previousTradeWithPrice = data.trades
     .filter((row) => row.date < bulletinDate)

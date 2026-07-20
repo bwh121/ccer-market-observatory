@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
 import test from "node:test";
+import { previousCalendarWeek, shiftDate } from "../app/dateUtils.ts";
 
 const HISTORICAL_REGISTRATION_BUCKET = "before-2026-07-11";
 const HISTORICAL_REGISTRATION_LABEL = "2026-07-11 前";
@@ -10,6 +11,16 @@ function assertRegistrationBucket(date, label) {
   assert.ok(date === HISTORICAL_REGISTRATION_BUCKET || REGISTRATION_DATE_PATTERN.test(date));
   assert.equal(label, date === HISTORICAL_REGISTRATION_BUCKET ? HISTORICAL_REGISTRATION_LABEL : date);
 }
+
+test("derives the latest bulletin from the previous natural day", () => {
+  assert.equal(shiftDate("2026-07-20", -1), "2026-07-19");
+  assert.equal(shiftDate("2026-08-01", -1), "2026-07-31");
+  assert.equal(shiftDate("2028-03-01", -1), "2028-02-29");
+  assert.deepEqual(previousCalendarWeek("2026-07-20"), {
+    start: "2026-07-13",
+    end: "2026-07-19",
+  });
+});
 
 async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -36,8 +47,9 @@ test("server-renders the CCER research dashboard shell", async () => {
 
   const dashboardSource = await readFile(new URL("../app/DashboardClient.tsx", import.meta.url), "utf8");
   assert.match(dashboardSource, /建议反馈/);
-  assert.match(dashboardSource, /const bulletinDate = data\.tradeSummary\.latestDate/);
+  assert.match(dashboardSource, /const bulletinDate = shiftDate\(snapshotDate, -1\)/);
   assert.match(dashboardSource, /最新动态/);
+  assert.match(dashboardSource, /\{bulletinDate\}日，全国 CCER 市场无成交/);
   assert.match(dashboardSource, /\{bulletinDate\}日，新登记项目/);
   assert.match(dashboardSource, /上周（\{lastWeek\.start\}日至\{lastWeek\.end\}日）/);
   assert.match(dashboardSource, /数据来源与说明/);
