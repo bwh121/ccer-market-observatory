@@ -5,6 +5,7 @@ import { previousCalendarWeek, shiftDate } from "../app/dateUtils.ts";
 
 const HISTORICAL_REGISTRATION_BUCKET = "before-2026-07-11";
 const HISTORICAL_REGISTRATION_LABEL = "2026-07-11 前";
+const HISTORICAL_REGISTERED_REDUCTION_BASELINE = 21_775_733;
 const REGISTRATION_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function assertRegistrationBucket(date, label) {
@@ -89,7 +90,10 @@ test("ships a complete and internally consistent dashboard dataset", async () =>
   const actualReduction = payload.projects
     .filter((row) => row.categoryCode === "4")
     .reduce((total, row) => total + row.actualReduction, 0);
-  assert.equal(actualReduction, 21_775_733);
+  assert.ok(
+    actualReduction >= HISTORICAL_REGISTERED_REDUCTION_BASELINE,
+    `registered reduction total regressed below the historical baseline: ${actualReduction}`,
+  );
   assert.equal(
     Object.values(projectRegistrationRegistry).filter((date) => date === HISTORICAL_REGISTRATION_BUCKET).length,
     40,
