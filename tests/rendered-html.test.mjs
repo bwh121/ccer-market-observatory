@@ -5,6 +5,7 @@ import { previousCalendarWeek, shiftDate } from "../app/dateUtils.ts";
 
 const HISTORICAL_REGISTRATION_BUCKET = "before-2026-07-11";
 const HISTORICAL_REGISTRATION_LABEL = "2026-07-11 前";
+const HISTORICAL_METHODOLOGY_BASELINE = 9;
 const HISTORICAL_REGISTERED_REDUCTION_BASELINE = 21_775_733;
 const REGISTRATION_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -78,7 +79,14 @@ test("ships a complete and internally consistent dashboard dataset", async () =>
   assert.equal(payload.trades.length, payload.quality.tradeRecords);
   assert.equal(payload.projects.length, payload.quality.projectRecords);
   assert.equal(payload.trades.at(-1).date, payload.dataThrough);
-  assert.equal(payload.methodologies.length, 9);
+  const expectedMethodologies = [...new Set(payload.projects.map((row) => row.methodology))].sort((a, b) =>
+    a.localeCompare(b, "zh-CN"),
+  );
+  assert.deepEqual(payload.methodologies, expectedMethodologies);
+  assert.ok(
+    payload.methodologies.length >= HISTORICAL_METHODOLOGY_BASELINE,
+    `methodology count regressed below the historical baseline: ${payload.methodologies.length}`,
+  );
   assert.equal(map.features.length, 35);
   assert.ok(payload.projects.every((row) => row.projectName && row.categoryCode && row.detailUrl));
   assert.ok(
