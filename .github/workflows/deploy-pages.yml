@@ -67,9 +67,34 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          TAG="prod-$(date -u +%Y.%m.%d)-${GITHUB_SHA:0:7}"
-          git tag -a "$TAG" "$GITHUB_SHA" -m "Production deployment $TAG"
-          git push origin "$TAG"
+          TAG="prod-$(TZ=Asia/Shanghai date +%Y.%m.%d)-${GITHUB_SHA:0:7}"
+          remote_tag_commit() {
+            local remote_sha
+            remote_sha="$(git ls-remote origin "refs/tags/${TAG}^{}" | awk 'NR == 1 {print $1}')"
+            if [[ -z "$remote_sha" ]]; then
+              remote_sha="$(git ls-remote origin "refs/tags/$TAG" | awk 'NR == 1 {print $1}')"
+            fi
+            printf '%s' "$remote_sha"
+          }
+          REMOTE_TAG_SHA="$(remote_tag_commit)"
+          if [[ -n "$REMOTE_TAG_SHA" && "$REMOTE_TAG_SHA" != "$GITHUB_SHA" ]]; then
+            echo "Tag $TAG already points to a different commit: $REMOTE_TAG_SHA" >&2
+            exit 1
+          fi
+          if [[ -z "$REMOTE_TAG_SHA" ]]; then
+            git tag -a "$TAG" "$GITHUB_SHA" -m "Production deployment $TAG"
+            if ! git push origin "$TAG"; then
+              # A concurrent run may have published the same immutable tag.
+              REMOTE_TAG_SHA="$(remote_tag_commit)"
+              if [[ "$REMOTE_TAG_SHA" != "$GITHUB_SHA" ]]; then
+                echo "Failed to publish $TAG; remote points to: ${REMOTE_TAG_SHA:-missing}" >&2
+                exit 1
+              fi
+              echo "Production tag $TAG was published concurrently at this commit."
+            fi
+          else
+            echo "Production tag $TAG already exists at this commit; keeping it unchanged."
+          fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "### Production release" >> "$GITHUB_STEP_SUMMARY"
           echo "Deployed commit: `$GITHUB_SHA`" >> "$GITHUB_STEP_SUMMARY"
