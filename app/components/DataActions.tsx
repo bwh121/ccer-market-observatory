@@ -1,0 +1,110 @@
+"use client";
+
+export type ExportCell = string | number | boolean | null | undefined;
+export type ExportRow = Record<string, ExportCell>;
+export type ExportSection = {
+  title: string;
+  rows: ExportRow[];
+};
+
+const safeFileName = (value: string) =>
+  value.trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "-") || "ccer-data";
+
+const csvCell = (value: ExportCell) => {
+  const text = value == null ? "" : String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+};
+
+const triggerDownload = (blob: Blob, fileName: string) => {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+};
+
+export function downloadDataSections(fileName: string, sections: ExportSection[]) {
+  const lines: string[] = [];
+  for (const section of sections) {
+    const columns = [...new Set(section.rows.flatMap((row) => Object.keys(row)))];
+    lines.push(csvCell(section.title));
+    if (!section.rows.length) {
+      lines.push("无数据", "");
+      continue;
+    }
+    lines.push(columns.map(csvCell).join(","));
+    for (const row of section.rows) {
+      lines.push(columns.map((column) => csvCell(row[column])).join(","));
+    }
+    lines.push("");
+  }
+  triggerDownload(
+    new Blob([`\uFEFF${lines.join("\r\n")}`], { type: "text/csv;charset=utf-8" }),
+    `${safeFileName(fileName)}.csv`,
+  );
+}
+
+export function DataDownloadButton({
+  fileName,
+  sections,
+  label = "下载数据",
+}: {
+  fileName: string;
+  sections: ExportSection[];
+  label?: string;
+}) {
+  return (
+    <button
+      type="button"
+      className="data-action-button"
+      onClick={() => downloadDataSections(fileName, sections)}
+      disabled={!sections.some((section) => section.rows.length)}
+    >
+      {label}
+    </button>
+  );
+}
+
+export async function saveChartImage({
+  dataUrl,
+  title,
+  fileName,
+}: {
+  dataUrl: string;
+  title: string;
+  fileName: string;
+}) {
+  const image = new Image();
+  image.src = dataUrl;
+  await image.decode();
+
+  const topBand = 104;
+  const bottomBand = 68;
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight + topBand + bottomBand;
+  const context = canvas.getContext("2d");
+  if (!context) return;
+
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = "#14211f";
+  context.font = '600 30px "Noto Serif SC", "Source Han Serif SC", serif';
+  context.textBaseline = "middle";
+  context.fillText(title, 38, topBand / 2, canvas.width - 76);
+  context.drawImage(image, 0, topBand);
+  context.fillStyle = "#7a8986";
+  context.font = '20px "Noto Sans SC", "Microsoft YaHei", sans-serif';
+  context.fillText(
+    "来源：全国 CCER 市场信息追踪 · 作者：逃跑大魔王",
+    38,
+    canvas.height - bottomBand / 2,
+    canvas.width - 76,
+  );
+
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+  if (blob) triggerDownload(blob, `${safeFileName(fileName)}.png`);
+}

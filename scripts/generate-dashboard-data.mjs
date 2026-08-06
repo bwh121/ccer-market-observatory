@@ -4,7 +4,9 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const siteDir = path.resolve(__dirname, "..");
-const workspace = path.resolve(siteDir, "..");
+const workspace = process.env.CCER_WORKSPACE
+  ? path.resolve(process.env.CCER_WORKSPACE)
+  : path.resolve(siteDir, "..");
 const dataDir = path.join(
   workspace,
   "outputs",
@@ -116,11 +118,19 @@ for (const row of reductionsRaw) {
   if (String(row._category_code) !== "4") continue;
   const key = row._snapshot_key;
   if (!reductionBySnapshot.has(key)) {
-    reductionBySnapshot.set(key, { total: 0, years: new Set() });
+    reductionBySnapshot.set(key, { total: 0, years: new Set(), entries: [] });
   }
   const bucket = reductionBySnapshot.get(key);
-  bucket.total += asNumber(row.applyVol);
-  if (row.regYear != null && row.regYear !== "") bucket.years.add(String(row.regYear));
+  const amount = asNumber(row.applyVol);
+  const registrationYear = row.regYear == null ? "" : String(row.regYear);
+  bucket.total += amount;
+  if (registrationYear) bucket.years.add(registrationYear);
+  bucket.entries.push({
+    detailIndex: asNumber(row.detail_index),
+    registrationYear,
+    amount,
+    status: row.statusCn || "",
+  });
 }
 
 for (const row of projectsRaw.filter((project) => String(project._category_code) === "4")) {
@@ -156,6 +166,17 @@ const projects = projectsRaw.map((row) => {
       ? projectRegistrationRegistry[row._snapshot_key] || HISTORICAL_PROJECT_BUCKET
       : "";
   const actualAnnualAverage = reductionYears > 0 ? Number((actualReduction / reductionYears).toFixed(2)) : 0;
+  const accountingPeriodSequence = String(row.certificationPeriodNo || "");
+  const reductionEntries = reduction
+    ? reduction.entries
+        .slice()
+        .sort((a, b) => a.registrationYear.localeCompare(b.registrationYear) || a.detailIndex - b.detailIndex)
+        .map((entry) => ({
+          ...entry,
+          accountingPeriodSequence,
+          reductionRegistrationDate,
+        }))
+    : [];
   return {
     snapshotKey: row._snapshot_key,
     categoryCode: String(row._category_code || ""),
@@ -163,6 +184,7 @@ const projects = projectsRaw.map((row) => {
     statusName: row.applyStatusName || row.list_statusName || row.statusName || "未注明",
     projectName: row.projectName || row.list_projectName || "未命名项目",
     projectCode: row.projectCode || row.ccerCode || "",
+    commencementDate: normalizeDate(row.commencementDate),
     registrationDate: normalizeDate(row.registrationTime || row.projectRegDateTime),
     projectFirstSeenDate,
     projectFirstSeenLabel:
@@ -174,6 +196,7 @@ const projects = projectsRaw.map((row) => {
     projectLifetimeYears: asNumber(row.conclusionDate),
     accountingPeriodStart: normalizeDate(row.regAppStartDate),
     accountingPeriodEnd: normalizeDate(row.regAppEndDate),
+    accountingPeriodSequence,
     detailUrl: row._detail_url || row._source_list_url || quality.sources.project_list,
     province: row.provinceName || "未注明",
     longitude,
@@ -194,6 +217,7 @@ const projects = projectsRaw.map((row) => {
       reductionRegistrationDate === HISTORICAL_REDUCTION_BUCKET
         ? "2026-07-11 前"
         : reductionRegistrationDate,
+    reductionEntries,
     actualAnnualAverage,
     expectedAnnualAchievementRate:
       expectedAnnual > 0 ? Number((actualAnnualAverage / expectedAnnual).toFixed(6)) : null,
@@ -240,6 +264,13 @@ const mappedRegistered = projects.filter(
   (row) => ["2", "4"].includes(row.categoryCode) && row.longitude != null && row.latitude != null,
 ).length;
 const registeredTotal = projects.filter((row) => ["2", "4"].includes(row.categoryCode)).length;
+const knownStatusCodes = new Set(STATUS_ORDER.map(([code]) => code));
+const discoveredStatuses = [...new Map(
+  projects.map((row) => [row.categoryCode, row.categoryName]),
+).entries()]
+  .filter(([code]) => !knownStatusCodes.has(code))
+  .sort((a, b) => a[0].localeCompare(b[0]));
+const statusOrder = [...STATUS_ORDER, ...discoveredStatuses].map(([code, name]) => ({ code, name }));
 
 const dashboard = {
   generatedAt: quality.generated_at,
@@ -249,7 +280,7 @@ const dashboard = {
   projects,
   methodologies,
   provinces,
-  statusOrder: STATUS_ORDER.map(([code, name]) => ({ code, name })),
+  statusOrder,
   quality: {
     projectRecords: projects.length,
     tradeRecords: trades.length,

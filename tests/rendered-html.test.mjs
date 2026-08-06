@@ -48,6 +48,8 @@ test("server-renders the CCER research dashboard shell", async () => {
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 
   const dashboardSource = await readFile(new URL("../app/DashboardClient.tsx", import.meta.url), "utf8");
+  const chartSource = await readFile(new URL("../app/components/EChart.tsx", import.meta.url), "utf8");
+  const dataActionsSource = await readFile(new URL("../app/components/DataActions.tsx", import.meta.url), "utf8");
   assert.match(dashboardSource, /建议反馈/);
   assert.match(dashboardSource, /const bulletinDate = shiftDate\(snapshotDate, -1\)/);
   assert.match(dashboardSource, /最新动态/);
@@ -59,11 +61,26 @@ test("server-renders the CCER research dashboard shell", async () => {
   assert.match(dashboardSource, /wechat-author-qr\.png/);
   assert.doesNotMatch(dashboardSource, /from ["']next\/image["']/);
   assert.doesNotMatch(dashboardSource, /institutionSearch|输入机构名称/);
-  assert.match(dashboardSource, /各状态项目数量（个）/);
-  assert.match(dashboardSource, /各状态预计年均减排量（tCO₂e）/);
-  assert.match(dashboardSource, /累计登记减排量（tCO₂e）/);
-  assert.match(dashboardSource, /单个项目年均减排量情况/);
-  assert.match(dashboardSource, /label:\s*\{[\s\S]*?show:\s*true,[\s\S]*?position:\s*"top"/);
+  assert.match(dashboardSource, /全国 CCER 市场关键指标/);
+  assert.match(dashboardSource, /已发布方法学数量/);
+  assert.match(dashboardSource, /各状态项目数量与预计年均减排量/);
+  assert.match(dashboardSource, /stack:\s*"project-count"/);
+  assert.match(dashboardSource, /stack:\s*"expected-annual"/);
+  assert.match(dashboardSource, /type:\s*"boxplot"/);
+  assert.match(dashboardSource, /projectRegistrationGranularity/);
+  assert.match(dashboardSource, /reductionRegistrationGranularity/);
+  assert.match(dashboardSource, /TABLE_01_DETAIL_COLUMNS/);
+  assert.match(chartSource, /保存图片/);
+  assert.match(chartSource, /exportSections/);
+  assert.match(dataActionsSource, /来源：全国 CCER 市场信息追踪 · 作者：逃跑大魔王/);
+  assert.match(dataActionsSource, /下载数据/);
+  assert.equal(
+    (dashboardSource.match(/<EChart\b/g) || []).length,
+    (dashboardSource.match(/exportSections=/g) || []).length,
+    "every dashboard chart must expose downloadable chart and drilldown data",
+  );
+  assert.doesNotMatch(dashboardSource, /METHOD_COLORS|methodolog(?:y|ies).{0,30}(?:===|==)\s*9/i);
+  assert.match(dashboardSource, /useState\("18"\)/);
 });
 
 test("ships a complete and internally consistent dashboard dataset", async () => {
@@ -83,6 +100,11 @@ test("ships a complete and internally consistent dashboard dataset", async () =>
     a.localeCompare(b, "zh-CN"),
   );
   assert.deepEqual(payload.methodologies, expectedMethodologies);
+  assert.ok(
+    [...new Set(payload.projects.map((row) => row.categoryCode))]
+      .every((categoryCode) => payload.statusOrder.some((status) => status.code === categoryCode)),
+    "every discovered project status must be represented in statusOrder",
+  );
   assert.ok(
     payload.methodologies.length >= HISTORICAL_METHODOLOGY_BASELINE,
     `methodology count regressed below the historical baseline: ${payload.methodologies.length}`,
@@ -120,6 +142,18 @@ test("ships a complete and internally consistent dashboard dataset", async () =>
       );
     }
     assert.equal(project.reductionYearLabels.length, project.reductionYears);
+    assert.ok(project.commencementDate.match(/^\d{4}-\d{2}-\d{2}$/));
+    assert.ok(project.accountingPeriodSequence);
+    assert.ok(project.reductionEntries.length >= project.reductionYears);
+    assert.ok(
+      Math.abs(project.reductionEntries.reduce((total, entry) => total + entry.amount, 0) - project.actualReduction) < 0.01,
+    );
+    assert.ok(project.reductionEntries.every((entry) => entry.accountingPeriodSequence === project.accountingPeriodSequence));
+    assert.ok(project.reductionEntries.every((entry) => entry.reductionRegistrationDate === project.reductionRegistrationDate));
+    assert.deepEqual(
+      [...new Set(project.reductionEntries.map((entry) => entry.registrationYear))].sort(),
+      project.reductionYearLabels,
+    );
     assert.equal(project.reductionRegistrationDate, reductionRegistrationRegistry[project.snapshotKey]);
     assertRegistrationBucket(project.reductionRegistrationDate, project.reductionRegistrationLabel);
     assert.ok(project.reductionYearLabels.every((year) => /^\d{4}$/.test(year)));
