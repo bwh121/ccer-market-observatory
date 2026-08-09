@@ -4,7 +4,7 @@ import * as echarts from "echarts";
 import type { EChartsOption } from "echarts";
 import type { CSSProperties } from "react";
 import { useEffect, useRef } from "react";
-import { DataDownloadButton, saveChartImage } from "./DataActions";
+import { downloadDataSections, ExportActionMenu, saveChartImage } from "./DataActions";
 import type { ExportSection } from "./DataActions";
 
 type EChartProps = {
@@ -57,24 +57,33 @@ export function EChart({
   return (
     <div className="chart-block">
       {canExport ? (
-        <div className="chart-action-bar" aria-label={`${exportTitle}导出操作`}>
-          <button
-            type="button"
-            className="data-action-button"
-            onClick={() => {
-              const chart = chartRef.current;
-              if (!chart || !exportTitle || !exportFileName) return;
-              void saveChartImage({
-                dataUrl: chart.getDataURL({ pixelRatio: 2, backgroundColor: "#ffffff" }),
-                title: exportTitle,
-                fileName: exportFileName,
-              });
-            }}
-          >
-            保存图片
-          </button>
-          <DataDownloadButton fileName={exportFileName || "ccer-chart"} sections={exportSections || []} />
-        </div>
+        <ExportActionMenu
+          className="chart-export-menu"
+          ariaLabel={`${exportTitle}导出操作`}
+          actions={[
+            {
+              kind: "image",
+              label: "保存图片",
+              exportLabel: exportFileName || exportTitle || "CCER 图表",
+              perform: () => {
+                const chart = chartRef.current;
+                if (!chart || !exportTitle || !exportFileName) return;
+                return saveChartImage({
+                  dataUrl: chart.getDataURL({ pixelRatio: 2, backgroundColor: "#ffffff" }),
+                  title: exportTitle,
+                  fileName: exportFileName,
+                });
+              },
+            },
+            {
+              kind: "data",
+              label: "下载数据",
+              exportLabel: exportFileName || exportTitle || "CCER 图表",
+              perform: () => downloadDataSections(exportFileName || "ccer-chart", exportSections || []),
+              disabled: !(exportSections || []).some((section) => section.rows.length),
+            },
+          ]}
+        />
       ) : null}
       <div ref={ref} className={className || "chart"} style={style} role="img" aria-label={ariaLabel} />
     </div>

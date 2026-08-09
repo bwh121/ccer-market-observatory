@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
 import test from "node:test";
-import { previousCalendarWeek, shiftDate } from "../app/dateUtils.ts";
+import { bulletinPeriodRange, previousCalendarWeek, shiftDate } from "../app/dateUtils.ts";
 
 const HISTORICAL_REGISTRATION_BUCKET = "before-2026-07-11";
 const HISTORICAL_REGISTRATION_LABEL = "2026-07-11 前";
@@ -22,6 +22,23 @@ test("derives the latest bulletin from the previous natural day", () => {
     start: "2026-07-13",
     end: "2026-07-19",
   });
+  assert.deepEqual(bulletinPeriodRange("2026-08-09", "yesterday"), {
+    start: "2026-08-08",
+    end: "2026-08-08",
+    empty: false,
+  });
+  assert.deepEqual(bulletinPeriodRange("2026-08-09", "week"), {
+    start: "2026-08-03",
+    end: "2026-08-08",
+    empty: false,
+  });
+  assert.deepEqual(bulletinPeriodRange("2026-08-09", "month"), {
+    start: "2026-08-01",
+    end: "2026-08-08",
+    empty: false,
+  });
+  assert.equal(bulletinPeriodRange("2026-08-10", "week").empty, true);
+  assert.equal(bulletinPeriodRange("2026-09-01", "month").empty, true);
 });
 
 async function render() {
@@ -50,12 +67,16 @@ test("server-renders the CCER research dashboard shell", async () => {
   const dashboardSource = await readFile(new URL("../app/DashboardClient.tsx", import.meta.url), "utf8");
   const chartSource = await readFile(new URL("../app/components/EChart.tsx", import.meta.url), "utf8");
   const dataActionsSource = await readFile(new URL("../app/components/DataActions.tsx", import.meta.url), "utf8");
+  const exportAccessSource = await readFile(new URL("../app/components/ExportAccess.tsx", import.meta.url), "utf8");
+  const exportMigration = await readFile(new URL("../supabase/migrations/20260809_export_access.sql", import.meta.url), "utf8");
   assert.match(dashboardSource, /建议反馈/);
-  assert.match(dashboardSource, /const bulletinDate = shiftDate\(snapshotDate, -1\)/);
   assert.match(dashboardSource, /最新动态/);
-  assert.match(dashboardSource, /\{bulletinDate\}日，全国 CCER 市场无成交/);
-  assert.match(dashboardSource, /\{bulletinDate\}日，新登记项目/);
-  assert.match(dashboardSource, /上周（\{lastWeek\.start\}日至\{lastWeek\.end\}日）/);
+  assert.match(dashboardSource, /全国温室气体自愿减排交易市场（CCER） 信息追踪。/);
+  assert.match(dashboardSource, /bulletinPeriodRange\(snapshotDate, bulletinPeriod\)/);
+  assert.match(dashboardSource, /统计区间：\{bulletinRangeLabel\}/);
+  assert.match(dashboardSource, /登记项目数量/);
+  assert.match(dashboardSource, /document\.getElementById\("figure-08"\)/);
+  assert.match(dashboardSource, /document\.getElementById\("figure-09"\)/);
   assert.match(dashboardSource, /数据来源与说明/);
   assert.match(dashboardSource, /联系作者/);
   assert.match(dashboardSource, /wechat-author-qr\.png/);
@@ -70,10 +91,37 @@ test("server-renders the CCER research dashboard shell", async () => {
   assert.match(dashboardSource, /projectRegistrationGranularity/);
   assert.match(dashboardSource, /reductionRegistrationGranularity/);
   assert.match(dashboardSource, /TABLE_01_DETAIL_COLUMNS/);
-  assert.match(chartSource, /保存图片/);
+  assert.match(chartSource, /label: "保存图片"/);
+  assert.match(chartSource, /ExportActionMenu/);
   assert.match(chartSource, /exportSections/);
   assert.match(dataActionsSource, /来源：全国 CCER 市场信息追踪 · 作者：逃跑大魔王/);
   assert.match(dataActionsSource, /下载数据/);
+  assert.match(dataActionsSource, /<summary aria-label=\{ariaLabel\}/);
+  assert.match(exportAccessSource, /token\?grant_type=password/);
+  assert.match(exportAccessSource, /type: "sms"/);
+  assert.match(exportAccessSource, /claim_export_quota/);
+  assert.match(exportMigration, /timezone\('Asia\/Shanghai', now\(\)\)/);
+  assert.match(exportMigration, /usage\.used_count < 2/);
+  assert.match(exportMigration, /private\.claim_export_quota/);
+  assert.match(exportMigration, /security definer/);
+  assert.match(exportMigration, /set search_path = ''/);
+  assert.doesNotMatch(dashboardSource, /className="download-trigger"/);
+  assert.doesNotMatch(dashboardSource, /trade-kpi-groups/);
+  const pulseSource = dashboardSource.slice(
+    dashboardSource.indexOf("<section className=\"market-pulse\""),
+    dashboardSource.indexOf("<section className=\"latest-news\""),
+  );
+  assert.equal((pulseSource.match(/<KpiCard\b/g) || []).length, 7);
+  assert.doesNotMatch(pulseSource, /已登记项目预计计入期总减排量/);
+  const table02Source = dashboardSource.slice(
+    dashboardSource.indexOf('label="TABLE 02"'),
+    dashboardSource.indexOf('label="TABLE 03"'),
+  );
+  assert.doesNotMatch(table02Source, /DataDownloadMenu/);
+  assert.match(dashboardSource, /exportTitle="CCER每日成交量与成交均价"/);
+  assert.match(dashboardSource, /selectedMode: false/);
+  assert.match(dashboardSource, /legend: \{[\s\S]*?orient: "vertical",[\s\S]*?right: 4,[\s\S]*?selectedMode: false/);
+  assert.ok((dashboardSource.match(/position: "top"/g) || []).length >= 3);
   assert.equal(
     (dashboardSource.match(/<EChart\b/g) || []).length,
     (dashboardSource.match(/exportSections=/g) || []).length,

@@ -1,5 +1,7 @@
 "use client";
 
+import { useExportAccess } from "./ExportAccess";
+
 export type ExportCell = string | number | boolean | null | undefined;
 export type ExportRow = Record<string, ExportCell>;
 export type ExportSection = {
@@ -47,24 +49,69 @@ export function downloadDataSections(fileName: string, sections: ExportSection[]
   );
 }
 
-export function DataDownloadButton({
+export type ExportMenuAction = {
+  kind: "image" | "data";
+  label: string;
+  exportLabel: string;
+  perform: () => void | Promise<void>;
+  disabled?: boolean;
+};
+
+export function ExportActionMenu({
+  actions,
+  ariaLabel = "导出操作",
+  className = "",
+}: {
+  actions: ExportMenuAction[];
+  ariaLabel?: string;
+  className?: string;
+}) {
+  const { requestExport } = useExportAccess();
+  return (
+    <details className={`export-menu ${className}`.trim()}>
+      <summary aria-label={ariaLabel} title={ariaLabel}>
+        <span aria-hidden="true">•••</span>
+      </summary>
+      <div className="export-menu-popover" role="menu">
+        {actions.map((action) => (
+          <button
+            key={`${action.kind}-${action.label}`}
+            type="button"
+            role="menuitem"
+            disabled={action.disabled}
+            onClick={(event) => {
+              const details = event.currentTarget.closest("details");
+              if (details) details.open = false;
+              requestExport({ kind: action.kind, label: action.exportLabel, perform: action.perform });
+            }}
+          >
+            {action.label}
+          </button>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+export function DataDownloadMenu({
   fileName,
   sections,
-  label = "下载数据",
 }: {
   fileName: string;
   sections: ExportSection[];
-  label?: string;
 }) {
+  const hasRows = sections.some((section) => section.rows.length);
   return (
-    <button
-      type="button"
-      className="data-action-button"
-      onClick={() => downloadDataSections(fileName, sections)}
-      disabled={!sections.some((section) => section.rows.length)}
-    >
-      {label}
-    </button>
+    <ExportActionMenu
+      ariaLabel="表格导出操作"
+      actions={[{
+        kind: "data",
+        label: "下载数据",
+        exportLabel: fileName,
+        perform: () => downloadDataSections(fileName, sections),
+        disabled: !hasRows,
+      }]}
+    />
   );
 }
 
