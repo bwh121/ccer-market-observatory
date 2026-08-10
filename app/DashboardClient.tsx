@@ -927,13 +927,13 @@ function Drawer({ state, onClose }: { state: DrawerState | null; onClose: () => 
               <p>{state.description}</p>
             </div>
             <div className="drawer-head-actions">
+              <button type="button" className="close-button" onClick={onClose} aria-label="关闭详情">
+                关闭
+              </button>
               <DataDownloadMenu
                 fileName={state.exportFileName || state.title}
                 sections={[{ title: selectedTab?.label || state.title, rows: exportRows }]}
               />
-              <button type="button" className="close-button" onClick={onClose} aria-label="关闭详情">
-                关闭
-              </button>
             </div>
           </div>
           {state.tabs?.length ? (
@@ -954,7 +954,7 @@ function Drawer({ state, onClose }: { state: DrawerState | null; onClose: () => 
             </div>
           ) : null}
         </div>
-        <div className="drawer-scroll-region">
+        <div className={visibleGroups.length ? "drawer-scroll-region table-mode" : "drawer-scroll-region"}>
           {visibleGroups.length ? (
           <div className="drawer-table-scroll grouped-project-list">
             <table className="drawer-project-table grouped-unified-table">
@@ -1757,12 +1757,12 @@ export default function DashboardClient() {
   const reductionComparisonOption = useMemo<EChartsOption>(() => ({
     color: ["#147d70", "#9b4d5b"],
     title: [
-      { text: "实际登记年均减排量分布", left: 170, top: 2, textStyle: { color: "#31403d", fontSize: 12, fontWeight: 600 } },
-      { text: "预计年均减排量达成率分布", right: 28, top: 2, textStyle: { color: "#31403d", fontSize: 12, fontWeight: 600 } },
+      { text: "实际登记年均减排量分布", left: 128, top: 2, textStyle: { color: "#31403d", fontSize: 12, fontWeight: 600 } },
+      { text: "预计年均减排量达成率分布", right: 18, top: 2, textStyle: { color: "#31403d", fontSize: 12, fontWeight: 600 } },
     ],
     grid: [
-      { left: 170, width: "31%", top: 78, bottom: 26 },
-      { right: 28, width: "31%", top: 78, bottom: 26 },
+      { left: 128, width: "34%", top: 78, bottom: 26 },
+      { right: 18, width: "34%", top: 78, bottom: 26 },
     ],
     tooltip: {
       trigger: "item",
@@ -1805,7 +1805,7 @@ export default function DashboardClient() {
         gridIndex: 0,
         inverse: true,
         data: reductionComparison.map((row) => row.methodology),
-        axisLabel: { color: "#596966", fontSize: 10, width: 150, overflow: "truncate" },
+        axisLabel: { color: "#596966", fontSize: 10, width: 112, overflow: "truncate" },
         axisLine: { lineStyle: { color: "#aab9b6" } },
       },
       {
@@ -2104,11 +2104,9 @@ export default function DashboardClient() {
     });
   const snapshotDate = data.generatedAt.slice(0, 10);
   const bulletinRange = bulletinPeriodRange(snapshotDate, bulletinPeriod);
-  const bulletinRangeLabel = bulletinRange.empty
-    ? "截至昨日暂无本周期日期"
-    : bulletinRange.start === bulletinRange.end
-      ? `${bulletinRange.end}日`
-      : `${bulletinRange.start}日至${bulletinRange.end}日`;
+  const bulletinRangeLabel = bulletinPeriod === "yesterday"
+    ? `${bulletinRange.end}日`
+    : `${bulletinRange.start}日至${bulletinRange.end}日`;
   const isInBulletinRange = (date: string) => (
     !bulletinRange.empty && date >= bulletinRange.start && date <= bulletinRange.end
   );
@@ -2307,7 +2305,7 @@ export default function DashboardClient() {
       <main className="dashboard-shell">
         <section className="hero">
           <div className="hero-copy hero-centered">
-            <h1>全国温室气体自愿减排交易市场（CCER） 信息追踪。</h1>
+            <h1>全国温室气体自愿减排交易市场（CCER） 信息追踪</h1>
           </div>
         </section>
 
@@ -2315,7 +2313,7 @@ export default function DashboardClient() {
           <div className="market-pulse-heading">
             <div>
               <div className="eyebrow">MARKET AT A GLANCE</div>
-              <h2 id="market-pulse-title">全国 CCER 市场关键指标</h2>
+              <h2 id="market-pulse-title">关键指标</h2>
             </div>
             <p>项目与减排量数据截至 {snapshotDate}，交易数据截至 {data.tradeSummary.latestDate}</p>
           </div>

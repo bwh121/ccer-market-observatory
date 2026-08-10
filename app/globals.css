@@ -313,7 +313,7 @@ a {
 
 .market-pulse .kpi-card {
   min-height: 116px;
-  padding: 14px 12px 12px;
+  padding: 14px 10px 12px;
   color: var(--ink);
   border-color: var(--line);
   background: rgba(250, 251, 248, 0.86);
@@ -321,12 +321,26 @@ a {
 }
 
 .market-pulse .kpi-label {
-  min-height: 34px;
-  font-size: 10px;
+  min-height: 30px;
+  overflow: visible;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.3;
+  white-space: nowrap;
 }
 
 .market-pulse .kpi-value {
-  font-size: clamp(18px, 1.45vw, 27px);
+  overflow: hidden;
+  font-size: clamp(21px, 2vw, 31px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+}
+
+.market-pulse .kpi-value span {
+  font-size: 9px;
 }
 
 .hero-copy > p {
@@ -680,6 +694,7 @@ a {
 }
 
 .panel {
+  position: relative;
   min-width: 0;
   padding: 20px;
   border: 1px solid var(--line);
@@ -692,11 +707,13 @@ a {
 }
 
 .panel-title-row {
+  position: relative;
   min-height: 62px;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
+  padding-right: 40px;
   margin-bottom: 8px;
 }
 
@@ -724,18 +741,24 @@ a {
   gap: 10px;
 }
 
+.panel-title-row .export-menu {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
 .table-controls { flex-wrap: wrap; justify-content: flex-end; }
 
 .chart-block {
-  position: relative;
+  position: static;
   width: 100%;
 }
 
 .chart-export-menu {
   position: absolute;
   z-index: 8;
-  top: 4px;
-  right: 4px;
+  top: 18px;
+  right: 18px;
 }
 
 .export-menu {
@@ -743,7 +766,7 @@ a {
   flex: 0 0 auto;
 }
 
-.export-menu > summary {
+.export-menu-trigger {
   width: 31px;
   height: 29px;
   display: grid;
@@ -758,21 +781,17 @@ a {
   transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
 }
 
-.export-menu > summary::-webkit-details-marker { display: none; }
-
-.export-menu > summary:hover,
-.export-menu[open] > summary {
+.export-menu-trigger:hover,
+.export-menu-trigger[aria-expanded="true"] {
   border-color: #a9bab6;
   color: var(--teal-dark);
   background: #edf3f0;
 }
 
 .export-menu-popover {
-  position: absolute;
-  z-index: 40;
-  top: calc(100% + 5px);
-  right: 0;
-  min-width: 138px;
+  position: fixed;
+  z-index: 1000;
+  width: 152px;
   overflow: hidden;
   padding: 4px;
   border: 1px solid var(--line);
@@ -836,7 +855,7 @@ a {
 
 .status-stacked-chart {
   width: 100%;
-  height: 560px;
+  height: 470px;
 }
 
 .boxplot-chart {
@@ -1788,7 +1807,7 @@ tbody tr:hover td {
 }
 
 .drawer {
-  width: min(980px, 96vw);
+  width: min(1360px, 98vw);
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -1926,6 +1945,18 @@ tbody tr:hover td {
   overflow-x: auto;
   overflow-y: visible;
   isolation: isolate;
+}
+
+.drawer-scroll-region.table-mode {
+  display: flex;
+  overflow: hidden;
+  padding-bottom: 18px;
+}
+
+.drawer-scroll-region.table-mode .drawer-table-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
 }
 
 .drawer-project-table {
@@ -2170,6 +2201,7 @@ tbody tr:hover td {
   .kpi-grid.six { grid-template-columns: repeat(3, 1fr); }
   .method-card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .market-pulse-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .market-pulse .kpi-label { font-size: 11px; }
   .hero { min-height: auto; }
 }
 
@@ -2237,7 +2269,7 @@ tbody tr:hover td {
   .market-pulse .kpi-card { min-height: 112px; }
   .chart-block { overflow-x: auto; }
   .boxplot-chart { min-width: 860px; }
-  .status-stacked-chart { min-width: 860px; height: 520px; }
+  .status-stacked-chart { min-width: 860px; height: 450px; }
   .drawer-head { align-items: flex-start; flex-direction: column; }
   .drawer-head-actions { width: 100%; justify-content: space-between; }
   .pagination { align-items: flex-start; flex-direction: column; }
@@ -2255,6 +2287,7 @@ tbody tr:hover td {
   .relation-chart { height: 620px; }
   .drawer-sticky-shell { padding: 18px 14px 0; }
   .drawer-scroll-region { padding: 0 14px 20px; }
+  .drawer-scroll-region.table-mode { padding: 0 14px 14px; }
   .drawer-item dl { grid-template-columns: 1fr; }
   .download-form { grid-template-columns: 1fr; }
   .feedback-admin-login { grid-template-columns: 1fr; }

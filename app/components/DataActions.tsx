@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useExportAccess } from "./ExportAccess";
 
 export type ExportCell = string | number | boolean | null | undefined;
@@ -67,29 +69,113 @@ export function ExportActionMenu({
   className?: string;
 }) {
   const { requestExport } = useExportAccess();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const closeTimerRef = useRef<number | null>(null);
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+
+  const cancelScheduledClose = () => {
+    if (closeTimerRef.current == null) return;
+    window.clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = null;
+  };
+
+  const scheduleClose = () => {
+    cancelScheduledClose();
+    closeTimerRef.current = window.setTimeout(() => setOpen(false), 160);
+  };
+
+  const toggleMenu = () => {
+    cancelScheduledClose();
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const menuWidth = 152;
+    const menuHeight = actions.length * 40 + 8;
+    const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
+    const below = rect.bottom + 6;
+    const top = below + menuHeight <= window.innerHeight - 8
+      ? below
+      : Math.max(8, rect.top - menuHeight - 6);
+    setPosition({ top, left });
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (triggerRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
+      close();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  useEffect(() => () => cancelScheduledClose(), []);
+
   return (
-    <details className={`export-menu ${className}`.trim()}>
-      <summary aria-label={ariaLabel} title={ariaLabel}>
+    <div
+      className={`export-menu ${className}`.trim()}
+      onMouseEnter={cancelScheduledClose}
+      onMouseLeave={scheduleClose}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        className="export-menu-trigger"
+        aria-label={ariaLabel}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={ariaLabel}
+        onClick={toggleMenu}
+      >
         <span aria-hidden="true">•••</span>
-      </summary>
-      <div className="export-menu-popover" role="menu">
-        {actions.map((action) => (
-          <button
-            key={`${action.kind}-${action.label}`}
-            type="button"
-            role="menuitem"
-            disabled={action.disabled}
-            onClick={(event) => {
-              const details = event.currentTarget.closest("details");
-              if (details) details.open = false;
-              requestExport({ kind: action.kind, label: action.exportLabel, perform: action.perform });
-            }}
-          >
-            {action.label}
-          </button>
-        ))}
-      </div>
-    </details>
+      </button>
+      {open && typeof document !== "undefined" ? createPortal(
+        <div
+          ref={popoverRef}
+          className="export-menu-popover"
+          role="menu"
+          style={{ top: position.top, left: position.left }}
+          onMouseEnter={cancelScheduledClose}
+          onMouseLeave={() => setOpen(false)}
+        >
+          {actions.map((action) => (
+            <button
+              key={`${action.kind}-${action.label}`}
+              type="button"
+              role="menuitem"
+              disabled={action.disabled}
+              onClick={() => {
+                setOpen(false);
+                requestExport({ kind: action.kind, label: action.exportLabel, perform: action.perform });
+              }}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>,
+        document.body,
+      ) : null}
+    </div>
   );
 }
 
