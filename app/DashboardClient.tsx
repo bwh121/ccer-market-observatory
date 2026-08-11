@@ -1,6 +1,11 @@
 "use client";
 
-import type { EChartsOption } from "echarts";
+import type {
+  CustomSeriesOption,
+  CustomSeriesRenderItemAPI,
+  CustomSeriesRenderItemParams,
+  EChartsOption,
+} from "echarts";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { EChart, echarts } from "./components/EChart";
@@ -300,27 +305,126 @@ const buildCompressedTradeTimeline = (months: CarbonPriceMonth[]) => {
       start: gapStart,
       end: compressedGapEnd,
       label: `${gapStartMonth}至${gapEndMonth}无 CCER 成交`,
+      startMonth: gapStartMonth,
+      endMonth: gapEndMonth,
       resumeMonth: new Date(gapEnd).toISOString().slice(0, 7),
     },
   };
 };
 
-const formatMonthlyAxisLabel = (
-  value: number,
-  rangeStartValue: number,
-  rangeStartMonth: string,
-  axisMonth: (timestamp: number) => string | null,
-  resumeMonth?: string,
-) => {
-  if (value < rangeStartValue - DAY_MS) return "";
-  const monthKey = Math.abs(value - rangeStartValue) <= 20 * DAY_MS
-    ? rangeStartMonth
-    : axisMonth(value);
-  if (!monthKey) return "";
-  if (monthKey === rangeStartMonth && Math.abs(value - rangeStartValue) > 20 * DAY_MS) return "";
-  const [year, month] = monthKey.split("-");
-  const showYear = monthKey === rangeStartMonth || month === "01" || monthKey === resumeMonth;
-  return `{month|${Number(month)}月}\n{year|${showYear ? year : " "}}`;
+const endOfUtcMonth = (month: string) => {
+  const [year, monthNumber] = month.split("-").map(Number);
+  return new Date(Date.UTC(year, monthNumber, 0)).toISOString().slice(0, 10);
+};
+
+type CalendarAxisBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+const buildCalendarAxisSeries = (
+  months: string[],
+  compressDate: (date: string) => number,
+  xAxisIndex: number,
+): CustomSeriesOption[] => {
+  const monthRows = months.map((month) => [
+    compressDate(`${month}-01`),
+    Number(month.slice(5, 7)),
+  ]);
+  const monthsByYear = new Map<string, string[]>();
+  months.forEach((month) => {
+    const year = month.slice(0, 4);
+    monthsByYear.set(year, [...(monthsByYear.get(year) || []), month]);
+  });
+  const yearRows = [...monthsByYear.entries()]
+    .filter(([, yearMonths]) => yearMonths.length > 1)
+    .map(([year, yearMonths]) => [
+      compressDate(`${yearMonths[0]}-01`),
+      compressDate(`${yearMonths.at(-1)}-01`),
+      Number(year),
+    ]);
+
+  const monthSeries: CustomSeriesOption = {
+    type: "custom",
+    coordinateSystem: "cartesian2d",
+    xAxisIndex,
+    yAxisIndex: 0,
+    silent: true,
+    clip: false,
+    animation: false,
+    tooltip: { show: false },
+    encode: { x: 0 },
+    data: monthRows,
+    renderItem: (params: CustomSeriesRenderItemParams, api: CustomSeriesRenderItemAPI) => {
+      const bounds = params.coordSys as typeof params.coordSys & CalendarAxisBounds;
+      const x = api.coord([Number(api.value(0)), 0])[0];
+      if (x < bounds.x - 1 || x > bounds.x + bounds.width + 1) return null;
+      return {
+        type: "text",
+        style: {
+          x: Math.max(bounds.x + 3, Math.min(bounds.x + bounds.width - 3, x)),
+          y: bounds.y + bounds.height + 13,
+          text: `${Number(api.value(1))}月`,
+          fill: "#596966",
+          fontSize: 9,
+          align: "center",
+          verticalAlign: "middle",
+        },
+      };
+    },
+  };
+
+  const yearSeries: CustomSeriesOption = {
+    type: "custom",
+    coordinateSystem: "cartesian2d",
+    xAxisIndex,
+    yAxisIndex: 0,
+    silent: true,
+    clip: false,
+    animation: false,
+    tooltip: { show: false },
+    encode: { x: [0, 1] },
+    data: yearRows,
+    renderItem: (params: CustomSeriesRenderItemParams, api: CustomSeriesRenderItemAPI) => {
+      const bounds = params.coordSys as typeof params.coordSys & CalendarAxisBounds;
+      const leftEdge = bounds.x;
+      const rightEdge = bounds.x + bounds.width;
+      const startX = Math.max(leftEdge, Math.min(rightEdge, api.coord([Number(api.value(0)), 0])[0]));
+      const endX = Math.max(leftEdge, Math.min(rightEdge, api.coord([Number(api.value(1)), 0])[0]));
+      if (endX - startX < 64) return null;
+      const centerX = (startX + endX) / 2;
+      const stemTop = bounds.y + bounds.height + 22;
+      const lineY = bounds.y + bounds.height + 35;
+      const labelGap = 24;
+      const lineStyle = { stroke: "#aab9b6", lineWidth: 0.8 };
+      return {
+        type: "group",
+        children: [
+          { type: "line", shape: { x1: startX, y1: stemTop, x2: startX, y2: lineY }, style: lineStyle },
+          { type: "line", shape: { x1: endX, y1: stemTop, x2: endX, y2: lineY }, style: lineStyle },
+          { type: "line", shape: { x1: startX, y1: lineY, x2: centerX - labelGap, y2: lineY }, style: lineStyle },
+          { type: "line", shape: { x1: centerX + labelGap, y1: lineY, x2: endX, y2: lineY }, style: lineStyle },
+          {
+            type: "text",
+            style: {
+              x: centerX,
+              y: lineY,
+              text: `${Number(api.value(2))}年`,
+              fill: "#31403d",
+              fontSize: 9,
+              fontWeight: 600,
+              align: "center",
+              verticalAlign: "middle",
+            },
+          },
+        ],
+      };
+    },
+  };
+
+  return [monthSeries, yearSeries];
 };
 
 const MAP_REGISTERED_COLUMNS = [
@@ -1508,13 +1612,20 @@ export default function DashboardClient() {
   const tradeOption = useMemo<EChartsOption>(() => {
     if (!data) return {};
     const rangeStart = `${data.carbonPriceComparison.months[0]?.month || data.trades[0]?.date.slice(0, 7)}-01`;
-    const rangeEnd = data.trades.at(-1)?.date;
     const rangeStartValue = tradeTimeline.compressDate(rangeStart);
-    const rangeStartMonth = rangeStart.slice(0, 7);
+    const rangeEndMonth = data.carbonPriceComparison.months.at(-1)?.month || data.trades.at(-1)?.date.slice(0, 7);
+    const rangeEndValue = rangeEndMonth
+      ? tradeTimeline.compressDate(endOfUtcMonth(rangeEndMonth))
+      : undefined;
+    const axisMonths = data.carbonPriceComparison.months
+      .map((row) => row.month)
+      .filter((month) => !tradeTimeline.compressedGap
+        || month < tradeTimeline.compressedGap.startMonth
+        || month > tradeTimeline.compressedGap.endMonth);
     return {
       animationDuration: 500,
       color: ["#9fc8bf", "#9b4d5b"],
-      grid: { left: 58, right: 66, top: 18, bottom: 76 },
+      grid: { left: 58, right: 66, top: 18, bottom: 88 },
       tooltip: {
         trigger: "axis",
         axisPointer: { type: "cross", crossStyle: { color: "#71817e" } },
@@ -1537,6 +1648,8 @@ export default function DashboardClient() {
           end: 100,
           height: 18,
           bottom: 4,
+          showDataShadow: false,
+          filterMode: "none",
           brushSelect: false,
           borderColor: "#c7d4d1",
           fillerColor: "rgba(20,125,112,.18)",
@@ -1546,28 +1659,13 @@ export default function DashboardClient() {
       xAxis: {
         type: "time",
         min: rangeStartValue,
-        max: rangeEnd ? tradeTimeline.compressDate(rangeEnd) : undefined,
+        max: rangeEndValue,
         splitNumber: 24,
         minInterval: 28 * DAY_MS,
         maxInterval: 31 * DAY_MS,
         axisLine: { lineStyle: { color: "#aab9b6" } },
         axisTick: { show: false },
-        axisLabel: {
-          color: "#596966",
-          hideOverlap: false,
-          margin: 8,
-          formatter: (value: number) => formatMonthlyAxisLabel(
-            value,
-            rangeStartValue,
-            rangeStartMonth,
-            tradeTimeline.axisMonth,
-            tradeTimeline.compressedGap?.resumeMonth,
-          ),
-          rich: {
-            month: { color: "#596966", fontSize: 9, lineHeight: 13 },
-            year: { color: "#31403d", fontSize: 9, fontWeight: 700, lineHeight: 13 },
-          },
-        },
+        axisLabel: { show: false },
       },
       yAxis: [
         {
@@ -1604,6 +1702,7 @@ export default function DashboardClient() {
           itemStyle: { color: "#9b4d5b" },
           connectNulls: false,
         },
+        ...buildCalendarAxisSeries(axisMonths, tradeTimeline.compressDate, 0),
       ],
     };
   }, [data, tradeTimeline]);
@@ -1612,10 +1711,16 @@ export default function DashboardClient() {
     if (!data) return {};
     const rows = data.carbonPriceComparison.months;
     const rangeStart = `${rows[0]?.month || data.trades[0]?.date.slice(0, 7)}-01`;
-    const rangeEnd = data.trades.at(-1)?.date;
     const rangeStartValue = tradeTimeline.compressDate(rangeStart);
-    const rangeEndValue = rangeEnd ? tradeTimeline.compressDate(rangeEnd) : undefined;
-    const rangeStartMonth = rangeStart.slice(0, 7);
+    const rangeEndMonth = rows.at(-1)?.month || data.trades.at(-1)?.date.slice(0, 7);
+    const rangeEndValue = rangeEndMonth
+      ? tradeTimeline.compressDate(endOfUtcMonth(rangeEndMonth))
+      : undefined;
+    const axisMonths = rows
+      .map((row) => row.month)
+      .filter((month) => !tradeTimeline.compressedGap
+        || month < tradeTimeline.compressedGap.startMonth
+        || month > tradeTimeline.compressedGap.endMonth);
     const premiumValues = rows
       .map((row) => row.premiumRate == null ? null : Number((row.premiumRate * 100).toFixed(2)))
       .filter((value): value is number => value != null);
@@ -1638,7 +1743,7 @@ export default function DashboardClient() {
         itemGap: 8,
         textStyle: { color: "#4e5f5c", fontSize: 11 },
       },
-      grid: { left: 62, right: 62, top: 48, bottom: 48 },
+      grid: { left: 62, right: 62, top: 48, bottom: 62 },
       tooltip: {
         trigger: "axis",
         axisPointer: { type: "cross", crossStyle: { color: "#71817e" } },
@@ -1662,6 +1767,7 @@ export default function DashboardClient() {
           id: "shared-trade-range",
           type: "inside",
           xAxisIndex: [0, 1],
+          filterMode: "none",
           start: 0,
           end: 100,
           zoomOnMouseWheel: false,
@@ -1696,22 +1802,7 @@ export default function DashboardClient() {
           maxInterval: 31 * DAY_MS,
           axisLine: { show: false },
           axisTick: { show: false },
-          axisLabel: {
-            color: "#596966",
-            hideOverlap: false,
-            margin: 8,
-            formatter: (value: number) => formatMonthlyAxisLabel(
-              value,
-              rangeStartValue,
-              rangeStartMonth,
-              tradeTimeline.axisMonth,
-              tradeTimeline.compressedGap?.resumeMonth,
-            ),
-            rich: {
-              month: { color: "#596966", fontSize: 9, lineHeight: 13 },
-              year: { color: "#31403d", fontSize: 9, fontWeight: 700, lineHeight: 13 },
-            },
-          },
+          axisLabel: { show: false },
         },
       ],
       yAxis: [
@@ -1787,6 +1878,7 @@ export default function DashboardClient() {
             };
           }),
         },
+        ...buildCalendarAxisSeries(axisMonths, tradeTimeline.compressDate, 1),
       ],
     };
   }, [data, tradeTimeline]);

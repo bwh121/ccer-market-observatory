@@ -197,10 +197,11 @@ test("server-renders the CCER research dashboard shell", async () => {
   assert.match(dashboardSource, /label="FIGURE 01A"/);
   assert.match(dashboardSource, /label="FIGURE 01A"\s+title="CCER每日成交量与成交均价"\s+\/>/);
   assert.doesNotMatch(dashboardSource, /label="FIGURE 01"/);
-  assert.match(dashboardSource, /formatMonthlyAxisLabel/);
-  assert.match(dashboardSource, /value < rangeStartValue - DAY_MS/);
-  assert.match(dashboardSource, /Math\.abs\(value - rangeStartValue\) <= 20 \* DAY_MS/);
-  assert.match(dashboardSource, /monthKey === rangeStartMonth && Math\.abs\(value - rangeStartValue\) > 20 \* DAY_MS/);
+  assert.match(dashboardSource, /buildCalendarAxisSeries/);
+  assert.match(dashboardSource, /endOfUtcMonth\(rangeEndMonth\)/);
+  assert.match(dashboardSource, /text: `\$\{Number\(api\.value\(1\)\)\}月`/);
+  assert.match(dashboardSource, /text: `\$\{Number\(api\.value\(2\)\)\}年`/);
+  assert.match(dashboardSource, /filterMode: "none"/);
   assert.match(dashboardSource, /maxInterval: 31 \* DAY_MS/);
   assert.match(dashboardSource, /xAxisIndex: \[0, 1\]/);
   assert.match(dashboardSource, /onZeroAxisIndex: 0/);
@@ -240,6 +241,7 @@ test("ships a complete and internally consistent dashboard dataset", async () =>
   assert.match(payload.carbonPriceComparison.ceaDataThrough, /^\d{4}-\d{2}-\d{2}$/);
   assert.equal(payload.carbonPriceComparison.ccerDataThrough, payload.dataThrough);
   assert.ok(payload.carbonPriceComparison.months.length > 0);
+  assert.equal(payload.carbonPriceComparison.months.at(-1).month, payload.dataThrough.slice(0, 7));
   const firstCcerTradeMonth = payload.trades.find((row) => row.volume > 0).date.slice(0, 7);
   assert.equal(payload.carbonPriceComparison.months[0].month, firstCcerTradeMonth);
   for (const row of payload.carbonPriceComparison.months) {
