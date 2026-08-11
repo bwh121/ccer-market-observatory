@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useExportAccess } from "./ExportAccess";
+import type { PreparedExport } from "./ExportAccess";
 
 export type ExportCell = string | number | boolean | null | undefined;
 export type ExportRow = Record<string, ExportCell>;
@@ -19,18 +20,7 @@ const csvCell = (value: ExportCell) => {
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 };
 
-const triggerDownload = (blob: Blob, fileName: string) => {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-};
-
-export function downloadDataSections(fileName: string, sections: ExportSection[]) {
+export function prepareDataSections(fileName: string, sections: ExportSection[]): PreparedExport {
   const lines: string[] = [];
   for (const section of sections) {
     const columns = [...new Set(section.rows.flatMap((row) => Object.keys(row)))];
@@ -45,17 +35,17 @@ export function downloadDataSections(fileName: string, sections: ExportSection[]
     }
     lines.push("");
   }
-  triggerDownload(
-    new Blob([`\uFEFF${lines.join("\r\n")}`], { type: "text/csv;charset=utf-8" }),
-    `${safeFileName(fileName)}.csv`,
-  );
+  return {
+    blob: new Blob([`\uFEFF${lines.join("\r\n")}`], { type: "text/csv;charset=utf-8" }),
+    fileName: `${safeFileName(fileName)}.csv`,
+  };
 }
 
 export type ExportMenuAction = {
   kind: "image" | "data";
   label: string;
   exportLabel: string;
-  perform: () => void | Promise<void>;
+  prepare: () => PreparedExport | Promise<PreparedExport>;
   disabled?: boolean;
 };
 
@@ -166,7 +156,7 @@ export function ExportActionMenu({
               disabled={action.disabled}
               onClick={() => {
                 setOpen(false);
-                requestExport({ kind: action.kind, label: action.exportLabel, perform: action.perform });
+                requestExport({ kind: action.kind, label: action.exportLabel, prepare: action.prepare });
               }}
             >
               {action.label}
@@ -194,14 +184,14 @@ export function DataDownloadMenu({
         kind: "data",
         label: "下载数据",
         exportLabel: fileName,
-        perform: () => downloadDataSections(fileName, sections),
+        prepare: () => prepareDataSections(fileName, sections),
         disabled: !hasRows,
       }]}
     />
   );
 }
 
-export async function saveChartImage({
+export async function prepareChartImage({
   dataUrl,
   title,
   fileName,
@@ -209,7 +199,7 @@ export async function saveChartImage({
   dataUrl: string;
   title: string;
   fileName: string;
-}) {
+}): Promise<PreparedExport> {
   const image = new Image();
   image.src = dataUrl;
   await image.decode();
@@ -220,7 +210,7 @@ export async function saveChartImage({
   canvas.width = image.naturalWidth;
   canvas.height = image.naturalHeight + topBand + bottomBand;
   const context = canvas.getContext("2d");
-  if (!context) return;
+  if (!context) throw new Error("无法创建图片画布，请稍后重试。");
 
   context.fillStyle = "#ffffff";
   context.fillRect(0, 0, canvas.width, canvas.height);
@@ -239,5 +229,6 @@ export async function saveChartImage({
   );
 
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-  if (blob) triggerDownload(blob, `${safeFileName(fileName)}.png`);
+  if (!blob) throw new Error("图片生成失败，请稍后重试。");
+  return { blob, fileName: `${safeFileName(fileName)}.png` };
 }

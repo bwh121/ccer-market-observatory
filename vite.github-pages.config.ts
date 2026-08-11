@@ -3,6 +3,7 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   root: "github-pages",
+  envDir: "..",
   base: "/ccer-market-observatory/",
   publicDir: "../public",
   plugins: [react()],

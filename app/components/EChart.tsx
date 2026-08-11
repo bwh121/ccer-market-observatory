@@ -4,7 +4,7 @@ import * as echarts from "echarts";
 import type { EChartsOption } from "echarts";
 import type { CSSProperties } from "react";
 import { useEffect, useRef } from "react";
-import { downloadDataSections, ExportActionMenu, saveChartImage } from "./DataActions";
+import { ExportActionMenu, prepareChartImage, prepareDataSections } from "./DataActions";
 import type { ExportSection } from "./DataActions";
 
 type EChartProps = {
@@ -65,10 +65,10 @@ export function EChart({
               kind: "image",
               label: "保存图片",
               exportLabel: exportFileName || exportTitle || "CCER 图表",
-              perform: () => {
+              prepare: () => {
                 const chart = chartRef.current;
-                if (!chart || !exportTitle || !exportFileName) return;
-                return saveChartImage({
+                if (!chart || !exportTitle || !exportFileName) throw new Error("图表尚未准备完成。");
+                return prepareChartImage({
                   dataUrl: chart.getDataURL({ pixelRatio: 2, backgroundColor: "#ffffff" }),
                   title: exportTitle,
                   fileName: exportFileName,
@@ -79,7 +79,7 @@ export function EChart({
               kind: "data",
               label: "下载数据",
               exportLabel: exportFileName || exportTitle || "CCER 图表",
-              perform: () => downloadDataSections(exportFileName || "ccer-chart", exportSections || []),
+              prepare: () => prepareDataSections(exportFileName || "ccer-chart", exportSections || []),
               disabled: !(exportSections || []).some((section) => section.rows.length),
             },
           ]}

@@ -5,15 +5,21 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 
 type ExportKind = "image" | "data";
 
+export type PreparedExport = {
+  blob: Blob;
+  fileName: string;
+};
+
 export type ProtectedExport = {
   kind: ExportKind;
   label: string;
-  perform: () => void | Promise<void>;
+  prepare: () => PreparedExport | Promise<PreparedExport>;
 };
 
 type AuthUser = {
   id: string;
-  phone?: string;
+  email?: string;
+  email_confirmed_at?: string;
 };
 
 type AuthSession = {
@@ -28,48 +34,91 @@ type AuthResponse = Partial<AuthSession> & {
   user?: AuthUser;
 };
 
-type QuotaResponse = {
-  allowed: boolean;
+type AccessInfo = {
+  plan_code: string;
+  plan_name: string;
+  daily_limit: number;
   used: number;
   remaining: number;
 };
 
-type DialogView = "login" | "register" | "verify" | "account" | "limit" | "setup";
+type ExportResponse = AccessInfo & {
+  allowed: boolean;
+  signed_url?: string;
+  expires_in?: number;
+  message?: string;
+};
+
+type DialogView =
+  | "login"
+  | "register"
+  | "verifyEmail"
+  | "recover"
+  | "recoverySent"
+  | "resetPassword"
+  | "account"
+  | "limit"
+  | "setup";
 
 type ExportAccessValue = {
   requestExport: (request: ProtectedExport) => void;
   openAccount: () => void;
+  signOut: () => void;
   signedIn: boolean;
-  maskedPhone: string;
+  accountEmail: string;
+  remaining: number | null;
 };
 
 type AuthBuildEnv = {
   VITE_SUPABASE_URL?: string;
   VITE_SUPABASE_PUBLISHABLE_KEY?: string;
   VITE_SUPABASE_ANON_KEY?: string;
+  VITE_TURNSTILE_SITE_KEY?: string;
 };
+
+type TurnstileApi = {
+  render: (container: HTMLElement, options: Record<string, unknown>) => string;
+  remove: (widgetId: string) => void;
+};
+
+declare global {
+  interface Window {
+    turnstile?: TurnstileApi;
+  }
+}
 
 const AUTH_ENV = (import.meta as ImportMeta & { env?: AuthBuildEnv }).env || {};
 const SUPABASE_URL = (AUTH_ENV.VITE_SUPABASE_URL || "").replace(/\/$/, "");
 const SUPABASE_KEY = AUTH_ENV.VITE_SUPABASE_PUBLISHABLE_KEY || AUTH_ENV.VITE_SUPABASE_ANON_KEY || "";
+const TURNSTILE_SITE_KEY = AUTH_ENV.VITE_TURNSTILE_SITE_KEY || "";
 const AUTH_CONFIGURED = Boolean(SUPABASE_URL && SUPABASE_KEY);
-const SESSION_STORAGE_KEY = "ccer-export-session-v1";
+const SESSION_STORAGE_KEY = "ccer-export-session-v2";
+const LEGACY_SESSION_STORAGE_KEY = "ccer-export-session-v1";
+const PRIVATE_EXPORT_ENDPOINT = `${SUPABASE_URL}/functions/v1/export-download`;
+const MAX_EXPORT_BYTES = 12 * 1024 * 1024;
 
 const ExportAccessContext = createContext<ExportAccessValue | null>(null);
 
-const normalizePhone = (value: string) => {
-  const trimmed = value.trim();
-  if (trimmed.startsWith("+")) return `+${trimmed.slice(1).replace(/\D/g, "")}`;
-  const digits = trimmed.replace(/\D/g, "");
-  if (/^1\d{10}$/.test(digits)) return `+86${digits}`;
-  if (/^861\d{10}$/.test(digits)) return `+${digits}`;
-  return digits ? `+${digits}` : "";
+const normalizeEmail = (value: string) => value.trim().toLowerCase();
+
+const validEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
+const maskEmail = (email = "") => {
+  const [local, domain] = email.split("@");
+  if (!local || !domain) return email || "已登录";
+  const visible = local.length <= 2 ? local.slice(0, 1) : local.slice(0, 2);
+  return `${visible}***@${domain}`;
 };
 
-const maskPhone = (phone = "") => {
-  const local = phone.replace(/^\+86/, "");
-  if (local.length < 7) return phone || "已登录";
-  return `${local.slice(0, 3)}****${local.slice(-4)}`;
+const translateAuthMessage = (message: string) => {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("invalid login credentials")) return "邮箱或密码不正确。";
+  if (normalized.includes("email not confirmed")) return "邮箱尚未验证，请先打开验证邮件完成确认。";
+  if (normalized.includes("user already registered")) return "该邮箱已经注册，请直接登录或找回密码。";
+  if (normalized.includes("password should be")) return "密码强度不足，请至少使用 8 位字符。";
+  if (normalized.includes("rate limit") || normalized.includes("security purposes")) return "请求过于频繁，请稍后再试。";
+  if (normalized.includes("captcha")) return "安全验证失败或已过期，请重新验证。";
+  return message;
 };
 
 const responseError = async (response: Response) => {
@@ -79,21 +128,28 @@ const responseError = async (response: Response) => {
     error_description?: string;
     error?: string;
   };
-  return payload.msg || payload.message || payload.error_description || payload.error || `请求失败（${response.status}）`;
+  const message = payload.msg || payload.message || payload.error_description || payload.error;
+  return translateAuthMessage(message || `请求失败（${response.status}）`);
 };
 
-const authRequest = async (path: string, body: Record<string, unknown>) => {
+const authRequest = async <T,>(
+  path: string,
+  body?: Record<string, unknown>,
+  options: { method?: "GET" | "POST" | "PUT"; token?: string } = {},
+) => {
   const response = await fetch(`${SUPABASE_URL}/auth/v1/${path}`, {
-    method: "POST",
+    method: options.method || "POST",
     headers: {
       apikey: SUPABASE_KEY,
-      authorization: `Bearer ${SUPABASE_KEY}`,
+      authorization: `Bearer ${options.token || SUPABASE_KEY}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify(body),
+    body: options.method === "GET" ? undefined : JSON.stringify(body || {}),
   });
   if (!response.ok) throw new Error(await responseError(response));
-  return response.json() as Promise<AuthResponse>;
+  if (response.status === 204) return {} as T;
+  const text = await response.text();
+  return (text ? JSON.parse(text) : {}) as T;
 };
 
 const toSession = (payload: AuthResponse): AuthSession | null => {
@@ -106,17 +162,111 @@ const toSession = (payload: AuthResponse): AuthSession | null => {
   };
 };
 
+const storedSession = () => {
+  try {
+    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as AuthSession;
+    return parsed.access_token && parsed.refresh_token && parsed.user?.id ? parsed : null;
+  } catch {
+    window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    return null;
+  }
+};
+
+const saveStoredSession = (session: AuthSession | null) => {
+  if (session) window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+  else window.localStorage.removeItem(SESSION_STORAGE_KEY);
+  window.localStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
+};
+
+const redirectUrl = () => `${window.location.origin}${window.location.pathname}`;
+
+const captchaBody = (token: string) => token
+  ? { gotrue_meta_security: { captcha_token: token } }
+  : {};
+
+const triggerSignedDownload = (url: string, fileName: string) => {
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.rel = "noreferrer";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+};
+
+function TurnstileWidget({ action, onToken }: { action: string; onToken: (token: string) => void }) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const widgetRef = useRef<string | null>(null);
+  const callbackRef = useRef(onToken);
+
+  useEffect(() => {
+    callbackRef.current = onToken;
+  }, [onToken]);
+
+  useEffect(() => {
+    if (!TURNSTILE_SITE_KEY || !hostRef.current) return;
+    let cancelled = false;
+    const render = () => {
+      if (cancelled || !hostRef.current || !window.turnstile || widgetRef.current) return;
+      widgetRef.current = window.turnstile.render(hostRef.current, {
+        sitekey: TURNSTILE_SITE_KEY,
+        action,
+        theme: "light",
+        language: "zh-cn",
+        callback: (token: string) => callbackRef.current(token),
+        "expired-callback": () => callbackRef.current(""),
+        "error-callback": () => callbackRef.current(""),
+      });
+    };
+    const existing = document.querySelector<HTMLScriptElement>('script[data-ccer-turnstile="true"]');
+    if (window.turnstile) render();
+    else if (existing) existing.addEventListener("load", render, { once: true });
+    else {
+      const script = document.createElement("script");
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      script.async = true;
+      script.defer = true;
+      script.dataset.ccerTurnstile = "true";
+      script.addEventListener("load", render, { once: true });
+      document.head.appendChild(script);
+    }
+    return () => {
+      cancelled = true;
+      existing?.removeEventListener("load", render);
+      if (widgetRef.current && window.turnstile) window.turnstile.remove(widgetRef.current);
+      widgetRef.current = null;
+    };
+  }, [action]);
+
+  if (!TURNSTILE_SITE_KEY) return null;
+  return <div className="turnstile-host" ref={hostRef} aria-label="Cloudflare Turnstile 安全验证" />;
+}
+
 export function ExportAccessProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null);
+  const [accessInfo, setAccessInfo] = useState<AccessInfo | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [view, setView] = useState<DialogView>(AUTH_CONFIGURED ? "login" : "setup");
-  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [verificationCode, setVerificationCode] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [captchaToken, setCaptchaToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [remaining, setRemaining] = useState<number | null>(null);
+  const [messageTone, setMessageTone] = useState<"info" | "error">("info");
   const pendingRef = useRef<ProtectedExport | null>(null);
+
+  const updateMessage = (value: string, tone: "info" | "error" = "info") => {
+    setMessage(value);
+    setMessageTone(tone);
+  };
+
+  const persistSession = (next: AuthSession | null) => {
+    setSession(next);
+    saveStoredSession(next);
+  };
 
   const closeDialog = () => {
     if (busy) return;
@@ -124,21 +274,71 @@ export function ExportAccessProvider({ children }: { children: ReactNode }) {
     setDialogOpen(false);
   };
 
+  const changeView = (next: DialogView) => {
+    setView(next);
+    setPassword("");
+    setConfirmPassword("");
+    setCaptchaToken("");
+    updateMessage("");
+  };
+
   useEffect(() => {
     if (!AUTH_CONFIGURED) return;
-    let restoreTimer: number | undefined;
-    try {
-      const stored = window.localStorage.getItem(SESSION_STORAGE_KEY);
-      if (!stored) return;
-      const parsed = JSON.parse(stored) as AuthSession;
-      if (parsed.access_token && parsed.refresh_token && parsed.user?.id) {
-        restoreTimer = window.setTimeout(() => setSession(parsed), 0);
+    let cancelled = false;
+    const restore = async () => {
+      window.localStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
+      const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      const callbackError = hash.get("error_description") || hash.get("error");
+      const accessToken = hash.get("access_token");
+      const refreshToken = hash.get("refresh_token");
+      const callbackType = hash.get("type");
+      if (callbackError || (accessToken && refreshToken)) {
+        window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`);
       }
-    } catch {
-      window.localStorage.removeItem(SESSION_STORAGE_KEY);
-    }
+      if (callbackError) {
+        if (!cancelled) {
+          setView("login");
+          setDialogOpen(true);
+          updateMessage(translateAuthMessage(callbackError), "error");
+        }
+        return;
+      }
+      if (accessToken && refreshToken) {
+        try {
+          const user = await authRequest<AuthUser>("user", undefined, { method: "GET", token: accessToken });
+          const next = toSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+            expires_in: Number(hash.get("expires_in") || 3600),
+            user,
+          });
+          if (!next || cancelled) return;
+          saveStoredSession(next);
+          setSession(next);
+          setEmail(next.user.email || "");
+          setView(callbackType === "recovery" ? "resetPassword" : "account");
+          setDialogOpen(true);
+          updateMessage(
+            callbackType === "recovery" ? "身份验证完成，请设置新密码。" : "邮箱验证完成，账号已登录。",
+          );
+        } catch (reason) {
+          if (!cancelled) {
+            setView("login");
+            setDialogOpen(true);
+            updateMessage(reason instanceof Error ? reason.message : "验证链接无效或已过期。", "error");
+          }
+        }
+        return;
+      }
+      const restored = storedSession();
+      if (restored && !cancelled) {
+        setSession(restored);
+        setEmail(restored.user.email || "");
+      }
+    };
+    void restore();
     return () => {
-      if (restoreTimer != null) window.clearTimeout(restoreTimer);
+      cancelled = true;
     };
   }, []);
 
@@ -154,15 +354,9 @@ export function ExportAccessProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [busy, dialogOpen]);
 
-  const persistSession = (next: AuthSession | null) => {
-    setSession(next);
-    if (next) window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(next));
-    else window.localStorage.removeItem(SESSION_STORAGE_KEY);
-  };
-
   const refreshSession = async (active: AuthSession) => {
     if (active.expires_at > Math.floor(Date.now() / 1000) + 60) return active;
-    const refreshed = toSession(await authRequest("token?grant_type=refresh_token", {
+    const refreshed = toSession(await authRequest<AuthResponse>("token?grant_type=refresh_token", {
       refresh_token: active.refresh_token,
     }));
     if (!refreshed) throw new Error("登录状态已失效，请重新登录。");
@@ -170,41 +364,74 @@ export function ExportAccessProvider({ children }: { children: ReactNode }) {
     return refreshed;
   };
 
-  const claimQuota = async (active: AuthSession, request: ProtectedExport) => {
+  const fetchAccessInfo = async (active: AuthSession) => {
     const current = await refreshSession(active);
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/claim_export_quota`, {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_export_access`, {
       method: "POST",
       headers: {
         apikey: SUPABASE_KEY,
         authorization: `Bearer ${current.access_token}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({ requested_kind: request.kind, requested_label: request.label }),
+      body: "{}",
     });
     if (response.status === 401) {
       persistSession(null);
       throw new Error("登录状态已失效，请重新登录。");
     }
     if (!response.ok) throw new Error(await responseError(response));
-    return response.json() as Promise<QuotaResponse>;
+    const info = await response.json() as AccessInfo;
+    setAccessInfo(info);
+    return { current, info };
   };
 
   const executeProtectedExport = async (request: ProtectedExport, active: AuthSession) => {
     setBusy(true);
-    setMessage("");
+    updateMessage("");
     try {
-      const quota = await claimQuota(active, request);
-      setRemaining(quota.remaining);
-      if (!quota.allowed) {
+      const current = await refreshSession(active);
+      const prepared = await request.prepare();
+      if (!prepared.blob.size) throw new Error("导出文件为空，无法下载。");
+      if (prepared.blob.size > MAX_EXPORT_BYTES) throw new Error("导出文件超过 12 MB，请缩小筛选范围后重试。");
+      const response = await fetch(PRIVATE_EXPORT_ENDPOINT, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_KEY,
+          authorization: `Bearer ${current.access_token}`,
+          "content-type": prepared.blob.type || "application/octet-stream",
+          "x-export-kind": request.kind,
+          "x-export-label": encodeURIComponent(request.label),
+          "x-file-name": encodeURIComponent(prepared.fileName),
+        },
+        body: prepared.blob,
+      });
+      if (response.status === 401) {
+        persistSession(null);
+        throw new Error("登录状态已失效，请重新登录。");
+      }
+      const payload = await response.json().catch(() => ({})) as Partial<ExportResponse>;
+      if (typeof payload.remaining === "number") {
+        setAccessInfo({
+          plan_code: payload.plan_code || "free",
+          plan_name: payload.plan_name || "免费用户",
+          daily_limit: payload.daily_limit ?? 2,
+          used: payload.used ?? 0,
+          remaining: payload.remaining,
+        });
+      }
+      if (response.status === 429 || payload.allowed === false) {
         setView("limit");
         setDialogOpen(true);
         return;
       }
-      await request.perform();
+      if (!response.ok || !payload.signed_url) {
+        throw new Error(payload.message || await responseError(response));
+      }
+      triggerSignedDownload(payload.signed_url, prepared.fileName);
       setDialogOpen(false);
     } catch (reason) {
       const errorMessage = reason instanceof Error ? reason.message : "导出授权失败，请稍后重试。";
-      setMessage(errorMessage);
+      updateMessage(errorMessage, "error");
       setView(errorMessage.includes("登录状态已失效") ? "login" : "account");
       setDialogOpen(true);
     } finally {
@@ -214,15 +441,18 @@ export function ExportAccessProvider({ children }: { children: ReactNode }) {
 
   const finishAuthentication = (next: AuthSession) => {
     persistSession(next);
-    setMessage("");
+    setEmail(next.user.email || email);
     setPassword("");
-    setVerificationCode("");
+    setConfirmPassword("");
+    setCaptchaToken("");
+    updateMessage("");
     const pending = pendingRef.current;
     pendingRef.current = null;
     if (pending) void executeProtectedExport(pending, next);
     else {
       setView("account");
       setDialogOpen(false);
+      void fetchAccessInfo(next).catch(() => undefined);
     }
   };
 
@@ -230,14 +460,14 @@ export function ExportAccessProvider({ children }: { children: ReactNode }) {
     if (!AUTH_CONFIGURED) {
       pendingRef.current = null;
       setView("setup");
-      setMessage("");
+      updateMessage("");
       setDialogOpen(true);
       return;
     }
     if (!session) {
       pendingRef.current = request;
       setView("login");
-      setMessage("登录后将继续本次导出。每个账号每天可导出 2 次。");
+      updateMessage("登录后将继续本次导出。免费账号每天可导出 2 次。");
       setDialogOpen(true);
       return;
     }
@@ -245,24 +475,29 @@ export function ExportAccessProvider({ children }: { children: ReactNode }) {
   };
 
   const openAccount = () => {
-    setMessage("");
+    updateMessage("");
     setView(!AUTH_CONFIGURED ? "setup" : session ? "account" : "login");
     setDialogOpen(true);
+    if (session) void fetchAccessInfo(session).catch((reason) => {
+      updateMessage(reason instanceof Error ? reason.message : "账户信息读取失败。", "error");
+    });
   };
 
   const submitLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
-    setMessage("");
+    updateMessage("");
     try {
-      const next = toSession(await authRequest("token?grant_type=password", {
-        phone: normalizePhone(phone),
+      const normalized = normalizeEmail(email);
+      if (!validEmail(normalized)) throw new Error("请输入有效邮箱地址。");
+      const next = toSession(await authRequest<AuthResponse>("token?grant_type=password", {
+        email: normalized,
         password,
       }));
       if (!next) throw new Error("登录响应不完整，请稍后重试。");
       finishAuthentication(next);
     } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : "登录失败，请检查手机号和密码。");
+      updateMessage(reason instanceof Error ? reason.message : "登录失败，请检查邮箱和密码。", "error");
     } finally {
       setBusy(false);
     }
@@ -271,55 +506,141 @@ export function ExportAccessProvider({ children }: { children: ReactNode }) {
   const submitRegistration = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
-    setMessage("");
+    updateMessage("");
     try {
-      const normalized = normalizePhone(phone);
-      if (!/^\+[1-9]\d{7,14}$/.test(normalized)) throw new Error("请输入有效手机号，中国大陆号码可直接输入 11 位数字。");
+      const normalized = normalizeEmail(email);
+      if (!validEmail(normalized)) throw new Error("请输入有效邮箱地址。");
       if (password.length < 8) throw new Error("密码至少需要 8 位。");
-      const payload = await authRequest("signup", { phone: normalized, password });
+      if (password !== confirmPassword) throw new Error("两次输入的密码不一致。");
+      if (TURNSTILE_SITE_KEY && !captchaToken) throw new Error("请先完成安全验证。");
+      const payload = await authRequest<AuthResponse>(
+        `signup?redirect_to=${encodeURIComponent(redirectUrl())}`,
+        { email: normalized, password, ...captchaBody(captchaToken) },
+      );
       const next = toSession(payload);
       if (next) finishAuthentication(next);
       else {
-        setView("verify");
-        setMessage("验证码已发送，请输入短信中的 6 位验证码完成注册。");
+        setEmail(normalized);
+        setPassword("");
+        setConfirmPassword("");
+        setCaptchaToken("");
+        setView("verifyEmail");
+        updateMessage("验证邮件已发送，请打开邮件中的链接完成注册。");
       }
     } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : "注册失败，请稍后重试。");
+      setCaptchaToken("");
+      updateMessage(reason instanceof Error ? reason.message : "注册失败，请稍后重试。", "error");
     } finally {
       setBusy(false);
     }
   };
 
-  const submitVerification = async (event: FormEvent<HTMLFormElement>) => {
+  const submitResendVerification = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
-    setMessage("");
+    updateMessage("");
     try {
-      const next = toSession(await authRequest("verify", {
-        phone: normalizePhone(phone),
-        token: verificationCode.trim(),
-        type: "sms",
-      }));
-      if (!next) throw new Error("验证成功但未取得登录状态，请返回登录。");
-      finishAuthentication(next);
+      if (TURNSTILE_SITE_KEY && !captchaToken) throw new Error("请先完成安全验证。");
+      await authRequest<Record<string, unknown>>(
+        `resend?redirect_to=${encodeURIComponent(redirectUrl())}`,
+        { type: "signup", email: normalizeEmail(email), ...captchaBody(captchaToken) },
+      );
+      setCaptchaToken("");
+      updateMessage("新的验证邮件已发送，请检查收件箱和垃圾邮件目录。");
     } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : "验证码无效或已过期。");
+      setCaptchaToken("");
+      updateMessage(reason instanceof Error ? reason.message : "验证邮件发送失败。", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitRecoveryRequest = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setBusy(true);
+    updateMessage("");
+    try {
+      const normalized = normalizeEmail(email);
+      if (!validEmail(normalized)) throw new Error("请输入有效邮箱地址。");
+      if (TURNSTILE_SITE_KEY && !captchaToken) throw new Error("请先完成安全验证。");
+      await authRequest<Record<string, unknown>>(
+        `recover?redirect_to=${encodeURIComponent(redirectUrl())}`,
+        { email: normalized, ...captchaBody(captchaToken) },
+      );
+      setEmail(normalized);
+      setCaptchaToken("");
+      setView("recoverySent");
+      updateMessage("密码重置邮件已发送，请通过邮件中的安全链接设置新密码。");
+    } catch (reason) {
+      setCaptchaToken("");
+      updateMessage(reason instanceof Error ? reason.message : "重置邮件发送失败。", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitPasswordReset = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!session) {
+      changeView("recover");
+      updateMessage("重置会话已失效，请重新发送密码重置邮件。", "error");
+      return;
+    }
+    setBusy(true);
+    updateMessage("");
+    try {
+      if (password.length < 8) throw new Error("新密码至少需要 8 位。");
+      if (password !== confirmPassword) throw new Error("两次输入的新密码不一致。");
+      await authRequest<AuthUser>("user", { password }, { method: "PUT", token: session.access_token });
+      setPassword("");
+      setConfirmPassword("");
+      setView("account");
+      updateMessage("密码已更新，后续可直接使用邮箱和新密码登录。");
+      void fetchAccessInfo(session).catch(() => undefined);
+    } catch (reason) {
+      updateMessage(reason instanceof Error ? reason.message : "密码更新失败。", "error");
     } finally {
       setBusy(false);
     }
   };
 
   const signOut = () => {
+    const active = session;
     persistSession(null);
+    setAccessInfo(null);
     pendingRef.current = null;
-    setRemaining(null);
     setView("login");
-    setMessage("已退出登录。");
+    updateMessage("已退出登录。");
+    if (active) void authRequest<Record<string, unknown>>("logout", {}, { token: active.access_token }).catch(() => undefined);
   };
+
+  const dailyLimit = accessInfo?.daily_limit ?? 2;
+  const title = view === "register"
+    ? "注册导出账号"
+    : view === "verifyEmail"
+      ? "验证注册邮箱"
+      : view === "recover" || view === "recoverySent"
+        ? "找回密码"
+        : view === "resetPassword"
+          ? "设置新密码"
+          : view === "limit"
+            ? "今日额度已用完"
+            : view === "setup"
+              ? "账号服务待启用"
+              : session
+                ? "账户"
+                : "登录后导出";
 
   return (
     <ExportAccessContext.Provider
-      value={{ requestExport, openAccount, signedIn: Boolean(session), maskedPhone: maskPhone(session?.user.phone) }}
+      value={{
+        requestExport,
+        openAccount,
+        signOut,
+        signedIn: Boolean(session),
+        accountEmail: session?.user.email || email,
+        remaining: accessInfo?.remaining ?? null,
+      }}
     >
       {children}
       {dialogOpen ? (
@@ -334,10 +655,8 @@ export function ExportAccessProvider({ children }: { children: ReactNode }) {
             <div className="download-dialog-head">
               <div>
                 <div className="eyebrow">ACCOUNT ACCESS</div>
-                <h2 id="account-dialog-title">
-                  {view === "register" ? "注册导出账号" : view === "verify" ? "验证手机号" : view === "limit" ? "今日额度已用完" : view === "setup" ? "账号服务待启用" : session ? "导出账号" : "登录后导出"}
-                </h2>
-                <p>保存图片与下载数据合计每天 2 次，按 Asia/Shanghai 自然日重置。</p>
+                <h2 id="account-dialog-title">{title}</h2>
+                <p>免费账号每天可保存图片或下载数据 2 次，按 Asia/Shanghai 自然日重置。</p>
               </div>
               <button type="button" className="close-button" onClick={closeDialog} disabled={busy}>关闭</button>
             </div>
@@ -345,13 +664,13 @@ export function ExportAccessProvider({ children }: { children: ReactNode }) {
             {view === "setup" ? (
               <div className="account-notice">
                 <strong>导出功能暂未开放</strong>
-                <p>为避免前端计数被绕过，本站只在账号与服务端配额数据库配置完成后开放导出。</p>
+                <p>本站仅在邮箱认证、私有文件存储和服务端配额校验全部可用后开放导出。</p>
               </div>
             ) : null}
 
             {view === "limit" ? (
               <div className="account-notice">
-                <strong>今天的 2 次导出额度已经用完</strong>
+                <strong>今天的 {dailyLimit} 次导出额度已经用完</strong>
                 <p>额度将在北京时间次日 00:00 自动恢复。</p>
                 <button type="button" className="account-secondary" onClick={closeDialog}>知道了</button>
               </div>
@@ -359,39 +678,75 @@ export function ExportAccessProvider({ children }: { children: ReactNode }) {
 
             {view === "account" && session ? (
               <div className="account-notice account-summary">
-                <strong>{maskPhone(session.user.phone)}</strong>
-                <p>{remaining == null ? "导出时将实时核验今日剩余额度。" : `今天还可导出 ${remaining} 次。`}</p>
+                <dl>
+                  <div><dt>账户邮箱</dt><dd>{session.user.email || email}</dd></div>
+                  <div><dt>账户类型</dt><dd>{accessInfo?.plan_name || "免费用户"}</dd></div>
+                  <div><dt>今日剩余</dt><dd>{accessInfo ? `${accessInfo.remaining} / ${accessInfo.daily_limit} 次` : "正在读取…"}</dd></div>
+                </dl>
                 <button type="button" className="account-secondary" onClick={signOut}>退出登录</button>
               </div>
             ) : null}
 
             {view === "login" ? (
               <form className="account-form" onSubmit={submitLogin}>
-                <label><span>手机号</span><input type="tel" autoComplete="tel" value={phone} onChange={(event) => setPhone(event.target.value)} required /></label>
+                <label><span>邮箱</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
                 <label><span>密码</span><input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
                 <button className="download-primary" type="submit" disabled={busy}>{busy ? "登录中…" : "登录"}</button>
-                <button type="button" className="account-text-button" onClick={() => { setView("register"); setMessage(""); }}>没有账号？注册</button>
+                <div className="account-form-links">
+                  <button type="button" className="account-text-button" onClick={() => changeView("register")}>没有账号？注册</button>
+                  <button type="button" className="account-text-button" onClick={() => changeView("recover")}>忘记密码</button>
+                </div>
               </form>
             ) : null}
 
             {view === "register" ? (
               <form className="account-form" onSubmit={submitRegistration}>
-                <label><span>手机号</span><input type="tel" autoComplete="tel" value={phone} onChange={(event) => setPhone(event.target.value)} required /></label>
+                <label><span>邮箱</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
                 <label><span>设置密码</span><input type="password" autoComplete="new-password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
-                <button className="download-primary" type="submit" disabled={busy}>{busy ? "正在发送…" : "注册并获取验证码"}</button>
-                <button type="button" className="account-text-button" onClick={() => { setView("login"); setMessage(""); }}>已有账号？返回登录</button>
+                <label><span>再次确认密码</span><input type="password" autoComplete="new-password" minLength={8} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required /></label>
+                <TurnstileWidget action="signup" onToken={setCaptchaToken} />
+                <button className="download-primary" type="submit" disabled={busy}>{busy ? "正在提交…" : "注册并发送验证邮件"}</button>
+                <button type="button" className="account-text-button" onClick={() => changeView("login")}>已有账号？返回登录</button>
               </form>
             ) : null}
 
-            {view === "verify" ? (
-              <form className="account-form" onSubmit={submitVerification}>
-                <label><span>短信验证码</span><input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={8} value={verificationCode} onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, ""))} required /></label>
-                <button className="download-primary" type="submit" disabled={busy}>{busy ? "验证中…" : "验证并登录"}</button>
-                <button type="button" className="account-text-button" onClick={() => { setView("register"); setMessage(""); }}>重新填写手机号</button>
+            {view === "verifyEmail" ? (
+              <form className="account-notice account-verification" onSubmit={submitResendVerification}>
+                <strong>验证邮件已发送至 {email}</strong>
+                <p>打开邮件中的验证链接后，账号才会正式生效。若未收到，请检查垃圾邮件目录。</p>
+                <TurnstileWidget action="resend-signup" onToken={setCaptchaToken} />
+                <button className="account-secondary" type="submit" disabled={busy}>{busy ? "发送中…" : "重新发送验证邮件"}</button>
+                <button type="button" className="account-text-button" onClick={() => changeView("login")}>返回登录</button>
               </form>
             ) : null}
 
-            {message ? <p className="account-message" role="status">{message}</p> : null}
+            {view === "recover" ? (
+              <form className="account-form" onSubmit={submitRecoveryRequest}>
+                <label><span>注册邮箱</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
+                <TurnstileWidget action="recover" onToken={setCaptchaToken} />
+                <button className="download-primary" type="submit" disabled={busy}>{busy ? "正在发送…" : "发送密码重置邮件"}</button>
+                <button type="button" className="account-text-button" onClick={() => changeView("login")}>返回登录</button>
+              </form>
+            ) : null}
+
+            {view === "recoverySent" ? (
+              <div className="account-notice account-verification">
+                <strong>请检查 {email}</strong>
+                <p>通过邮件中的安全链接返回本站后，即可设置新密码。链接过期后可重新申请。</p>
+                <button type="button" className="account-secondary" onClick={() => changeView("recover")}>重新发送</button>
+                <button type="button" className="account-text-button" onClick={() => changeView("login")}>返回登录</button>
+              </div>
+            ) : null}
+
+            {view === "resetPassword" ? (
+              <form className="account-form" onSubmit={submitPasswordReset}>
+                <label><span>新密码</span><input type="password" autoComplete="new-password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
+                <label><span>再次确认新密码</span><input type="password" autoComplete="new-password" minLength={8} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required /></label>
+                <button className="download-primary" type="submit" disabled={busy}>{busy ? "正在更新…" : "保存新密码"}</button>
+              </form>
+            ) : null}
+
+            {message ? <p className={`account-message ${messageTone}`} role="status">{message}</p> : null}
           </section>
         </div>
       ) : null}
@@ -406,10 +761,15 @@ export function useExportAccess() {
 }
 
 export function AccountAccessButton() {
-  const { maskedPhone, openAccount, signedIn } = useExportAccess();
+  const { accountEmail, openAccount, signOut, signedIn } = useExportAccess();
+  if (!signedIn) {
+    return <button type="button" className="account-trigger" onClick={openAccount}>登录 / 注册</button>;
+  }
   return (
-    <button type="button" className={signedIn ? "account-trigger signed-in" : "account-trigger"} onClick={openAccount}>
-      {signedIn ? maskedPhone : "登录 / 注册"}
-    </button>
+    <div className="account-header-status" aria-label="用户登录状态">
+      <span title={accountEmail}><i aria-hidden="true" />{maskEmail(accountEmail)}</span>
+      <button type="button" onClick={openAccount}>账户</button>
+      <button type="button" onClick={signOut}>退出登录</button>
+    </div>
   );
 }

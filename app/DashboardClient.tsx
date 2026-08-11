@@ -7,7 +7,7 @@ import { EChart, echarts } from "./components/EChart";
 import { DataDownloadMenu } from "./components/DataActions";
 import type { ExportRow, ExportSection } from "./components/DataActions";
 import { AccountAccessButton } from "./components/ExportAccess";
-import { bulletinPeriodRange } from "./dateUtils";
+import { bulletinPeriodLabel, bulletinPeriodRange } from "./dateUtils";
 import type { BulletinPeriod } from "./dateUtils";
 
 type DashboardBuildEnv = { BASE_URL?: string; VITE_STATIC_GITHUB?: string };
@@ -1516,8 +1516,19 @@ export default function DashboardClient() {
           stack: "project-count",
           yAxisIndex: 0,
           data: statusSummary.map((status) => status.methodologies.find((row) => row.methodology === methodology)?.count || 0),
-          itemStyle: { color },
-          emphasis: { disabled: true },
+          itemStyle: { color, opacity: 0.86 },
+          emphasis: {
+            focus: "self" as const,
+            blurScope: "coordinateSystem" as const,
+            itemStyle: {
+              opacity: 1,
+              borderColor: "#14211f",
+              borderWidth: 2,
+              shadowBlur: 14,
+              shadowColor: "rgba(20, 33, 31, 0.38)",
+            },
+          },
+          blur: { itemStyle: { opacity: 0.24 } },
           selectedMode: false,
           barMaxWidth: 34,
         },
@@ -1528,8 +1539,19 @@ export default function DashboardClient() {
           stack: "expected-annual",
           yAxisIndex: 1,
           data: statusSummary.map((status) => status.methodologies.find((row) => row.methodology === methodology)?.expectedAnnual || 0),
-          itemStyle: { color, opacity: 0.72 },
-          emphasis: { disabled: true },
+          itemStyle: { color, opacity: 0.62 },
+          emphasis: {
+            focus: "self" as const,
+            blurScope: "coordinateSystem" as const,
+            itemStyle: {
+              opacity: 1,
+              borderColor: "#14211f",
+              borderWidth: 2,
+              shadowBlur: 14,
+              shadowColor: "rgba(20, 33, 31, 0.38)",
+            },
+          },
+          blur: { itemStyle: { opacity: 0.18 } },
           selectedMode: false,
           barMaxWidth: 34,
         },
@@ -1548,16 +1570,24 @@ export default function DashboardClient() {
         textStyle: { color: "#475754", fontSize: 10, width: 210, overflow: "truncate" },
       },
       tooltip: {
-        trigger: "axis",
-        axisPointer: { type: "shadow" },
+        trigger: "item",
+        confine: true,
         formatter: (raw: unknown) => {
-          const params = (Array.isArray(raw) ? raw : [raw]) as Array<{ axisValue?: string }>;
-          const row = statusSummary.find((status) => status.name === params[0]?.axisValue);
-          if (!row) return "";
+          const params = raw as {
+            dataIndex?: number;
+            seriesId?: string;
+            seriesName?: string;
+            value?: number;
+          };
+          const status = statusSummary[Number(params.dataIndex)];
+          if (!status) return "";
+          const isProjectCount = String(params.seriesId || "").startsWith("count-");
+          const metric = isProjectCount ? "项目数量" : "预计年均减排量";
+          const unit = isProjectCount ? "个" : "吨/年";
           return [
-            `<strong>${row.name}</strong>`,
-            `项目数量：${exactNumber(row.count, 0)} 个`,
-            `预计年均减排量：${exactNumber(row.expectedAnnual, 0)} 吨/年`,
+            `<strong>${status.name}</strong>`,
+            `${params.seriesName || "未分类方法学"} · ${metric}`,
+            `${exactNumber(Number(params.value || 0), 0)} ${unit}`,
           ].join("<br/>");
         },
       },
@@ -2104,9 +2134,7 @@ export default function DashboardClient() {
     });
   const snapshotDate = data.generatedAt.slice(0, 10);
   const bulletinRange = bulletinPeriodRange(snapshotDate, bulletinPeriod);
-  const bulletinRangeLabel = bulletinPeriod === "yesterday"
-    ? `${bulletinRange.end}日`
-    : `${bulletinRange.start}日至${bulletinRange.end}日`;
+  const bulletinRangeLabel = bulletinPeriodLabel(snapshotDate, bulletinPeriod);
   const isInBulletinRange = (date: string) => (
     !bulletinRange.empty && date >= bulletinRange.start && date <= bulletinRange.end
   );
@@ -2375,7 +2403,7 @@ export default function DashboardClient() {
                   </button>
                 ))}
               </div>
-              <span>统计区间：{bulletinRangeLabel}</span>
+              <span>{bulletinRangeLabel}</span>
             </div>
           </div>
           <div className="latest-news-grid">

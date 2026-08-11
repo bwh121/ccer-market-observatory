@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
 import test from "node:test";
-import { bulletinPeriodRange, previousCalendarWeek, shiftDate } from "../app/dateUtils.ts";
+import { bulletinPeriodLabel, bulletinPeriodRange, previousCalendarWeek, shiftDate } from "../app/dateUtils.ts";
 
 const HISTORICAL_REGISTRATION_BUCKET = "before-2026-07-11";
 const HISTORICAL_REGISTRATION_LABEL = "2026-07-11 前";
@@ -39,14 +39,18 @@ test("derives the latest bulletin reporting periods", () => {
   });
   assert.deepEqual(bulletinPeriodRange("2026-08-10", "week"), {
     start: "2026-08-10",
-    end: "2026-08-10",
-    empty: false,
+    end: "2026-08-09",
+    empty: true,
   });
   assert.deepEqual(bulletinPeriodRange("2026-09-01", "month"), {
     start: "2026-09-01",
-    end: "2026-09-01",
-    empty: false,
+    end: "2026-08-31",
+    empty: true,
   });
+  assert.equal(bulletinPeriodLabel("2026-08-10", "week"), "本周数据暂未更新");
+  assert.equal(bulletinPeriodLabel("2026-08-11", "week"), "统计区间：2026-08-10日至2026-08-11日");
+  assert.equal(bulletinPeriodLabel("2026-09-01", "month"), "本月数据暂未更新");
+  assert.equal(bulletinPeriodLabel("2026-09-02", "month"), "统计区间：2026-09-01日至2026-09-02日");
 });
 
 async function render() {
@@ -75,15 +79,24 @@ test("server-renders the CCER research dashboard shell", async () => {
   const dashboardSource = await readFile(new URL("../app/DashboardClient.tsx", import.meta.url), "utf8");
   const chartSource = await readFile(new URL("../app/components/EChart.tsx", import.meta.url), "utf8");
   const dataActionsSource = await readFile(new URL("../app/components/DataActions.tsx", import.meta.url), "utf8");
+  const dateUtilsSource = await readFile(new URL("../app/dateUtils.ts", import.meta.url), "utf8");
   const stylesSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
   const exportAccessSource = await readFile(new URL("../app/components/ExportAccess.tsx", import.meta.url), "utf8");
+  const pagesConfigSource = await readFile(new URL("../vite.github-pages.config.ts", import.meta.url), "utf8");
+  const pagesWorkflowSource = await readFile(new URL("../.github/workflows/deploy-pages.yml", import.meta.url), "utf8");
   const exportMigration = await readFile(new URL("../supabase/migrations/20260809_export_access.sql", import.meta.url), "utf8");
+  const privateExportMigration = await readFile(new URL("../supabase/migrations/20260810_email_auth_private_exports.sql", import.meta.url), "utf8");
+  const securityMigration = await readFile(new URL("../supabase/migrations/20260811_harden_export_security.sql", import.meta.url), "utf8");
+  const quotaRestrictionMigration = await readFile(new URL("../supabase/migrations/20260811_restrict_quota_rpc.sql", import.meta.url), "utf8");
+  const exportFunction = await readFile(new URL("../supabase/functions/export-download/index.ts", import.meta.url), "utf8");
   assert.match(dashboardSource, /建议反馈/);
   assert.match(dashboardSource, /最新动态/);
   assert.match(dashboardSource, /全国温室气体自愿减排交易市场（CCER） 信息追踪<\/h1>/);
   assert.doesNotMatch(dashboardSource, /信息追踪。<\/h1>/);
   assert.match(dashboardSource, /bulletinPeriodRange\(snapshotDate, bulletinPeriod\)/);
-  assert.match(dashboardSource, /统计区间：\{bulletinRangeLabel\}/);
+  assert.match(dashboardSource, /bulletinPeriodLabel\(snapshotDate, bulletinPeriod\)/);
+  assert.match(dateUtilsSource, /本周数据暂未更新/);
+  assert.match(dateUtilsSource, /本月数据暂未更新/);
   assert.match(dashboardSource, /登记项目数量/);
   assert.match(dashboardSource, /document\.getElementById\("figure-08"\)/);
   assert.match(dashboardSource, /document\.getElementById\("figure-09"\)/);
@@ -97,6 +110,8 @@ test("server-renders the CCER research dashboard shell", async () => {
   assert.match(dashboardSource, /各状态项目数量与预计年均减排量/);
   assert.match(dashboardSource, /stack:\s*"project-count"/);
   assert.match(dashboardSource, /stack:\s*"expected-annual"/);
+  assert.match(dashboardSource, /trigger:\s*"item"/);
+  assert.match(dashboardSource, /shadowBlur:\s*14/);
   assert.match(dashboardSource, /type:\s*"boxplot"/);
   assert.match(dashboardSource, /projectRegistrationGranularity/);
   assert.match(dashboardSource, /reductionRegistrationGranularity/);
@@ -113,13 +128,38 @@ test("server-renders the CCER research dashboard shell", async () => {
   assert.match(stylesSource, /\.drawer\s*\{[\s\S]*?width: min\(1360px, 98vw\)/);
   assert.match(stylesSource, /\.status-stacked-chart\s*\{[\s\S]*?height: 470px/);
   assert.match(exportAccessSource, /token\?grant_type=password/);
-  assert.match(exportAccessSource, /type: "sms"/);
-  assert.match(exportAccessSource, /claim_export_quota/);
+  assert.match(exportAccessSource, /email: normalized/);
+  assert.match(exportAccessSource, /再次确认密码/);
+  assert.match(exportAccessSource, /recover\?redirect_to=/);
+  assert.match(exportAccessSource, /method: "PUT", token: session\.access_token/);
+  assert.match(exportAccessSource, /Cloudflare Turnstile/);
+  assert.match(exportAccessSource, /functions\/v1\/export-download/);
+  assert.doesNotMatch(exportAccessSource, /normalizePhone|type: "sms"|短信验证码/);
   assert.match(exportMigration, /timezone\('Asia\/Shanghai', now\(\)\)/);
   assert.match(exportMigration, /usage\.used_count < 2/);
   assert.match(exportMigration, /private\.claim_export_quota/);
   assert.match(exportMigration, /security definer/);
   assert.match(exportMigration, /set search_path = ''/);
+  assert.match(privateExportMigration, /account_plans/);
+  assert.match(privateExportMigration, /'institutional'/);
+  assert.match(privateExportMigration, /get_export_access/);
+  assert.match(privateExportMigration, /ccer-private-exports/);
+  assert.match(privateExportMigration, /release_failed_export/);
+  assert.match(securityMigration, /alter function public\.get_export_access\(\) security invoker/);
+  assert.match(securityMigration, /from public, anon/);
+  assert.match(quotaRestrictionMigration, /public\.claim_export_quota\(text, text\) from anon/);
+  assert.match(exportFunction, /claim_export_quota/);
+  assert.match(exportFunction, /storage\/v1\/object\/sign/);
+  assert.match(exportFunction, /signed_url/);
+  assert.match(exportFunction, /releaseQuota/);
+  assert.match(exportFunction, /Export event update failed/);
+  assert.match(stylesSource, /\.panel-title-row\s*\{[\s\S]*?position: static/);
+  assert.match(stylesSource, /\.chart-export-menu\s*\{[\s\S]*?top: 12px;[\s\S]*?right: 12px/);
+  assert.match(stylesSource, /\.export-menu\.chart-export-menu\s*\{[\s\S]*?position: absolute/);
+  assert.match(stylesSource, /\.hero-copy\s*\{[\s\S]*?max-width: none/);
+  assert.match(stylesSource, /html\s*\{[\s\S]*?overflow-x: clip/);
+  assert.match(pagesConfigSource, /envDir: "\.\."/);
+  assert.match(pagesWorkflowSource, /vars\.SUPABASE_URL \|\| 'https:\/\/rqujxecmlhoomaacwdlz\.supabase\.co'/);
   assert.doesNotMatch(dashboardSource, /className="download-trigger"/);
   assert.doesNotMatch(dashboardSource, /trade-kpi-groups/);
   const pulseSource = dashboardSource.slice(

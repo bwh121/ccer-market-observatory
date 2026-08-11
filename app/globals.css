@@ -24,11 +24,13 @@
 
 html {
   scroll-behavior: smooth;
+  overflow-x: clip;
   background: var(--paper);
 }
 
 body {
   margin: 0;
+  overflow-x: clip;
   color: var(--ink);
   background:
     linear-gradient(rgba(20, 125, 112, 0.035) 1px, transparent 1px),
@@ -216,7 +218,8 @@ a {
 }
 
 .hero-copy {
-  max-width: 920px;
+  width: 100%;
+  max-width: none;
 }
 
 .hero-centered {
@@ -229,6 +232,7 @@ a {
 }
 
 .hero h1 {
+  width: max-content;
   max-width: none;
   margin: 0 auto;
   font-family: var(--serif);
@@ -249,6 +253,51 @@ a {
   border-color: #8ca39d;
   color: var(--teal-dark);
   background: #e8f0ed;
+}
+
+.account-header-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px;
+  border: 1px solid #a8bab5;
+  border-radius: 2px;
+  background: #e8f0ed;
+}
+
+.account-header-status span {
+  max-width: 150px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  padding: 0 6px;
+  color: #40524e;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-header-status span i {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #23846f;
+  box-shadow: 0 0 0 3px rgba(35, 132, 111, 0.13);
+}
+
+.account-header-status button {
+  padding: 5px 7px;
+  border: 0;
+  color: var(--teal-dark);
+  background: transparent;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.account-header-status button:hover {
+  background: rgba(255, 255, 255, 0.62);
 }
 
 .market-pulse {
@@ -707,7 +756,7 @@ a {
 }
 
 .panel-title-row {
-  position: relative;
+  position: static;
   min-height: 62px;
   display: flex;
   align-items: flex-start;
@@ -743,8 +792,9 @@ a {
 
 .panel-title-row .export-menu {
   position: absolute;
-  top: 0;
-  right: 0;
+  z-index: 8;
+  top: 12px;
+  right: 12px;
 }
 
 .table-controls { flex-wrap: wrap; justify-content: flex-end; }
@@ -757,13 +807,20 @@ a {
 .chart-export-menu {
   position: absolute;
   z-index: 8;
-  top: 18px;
-  right: 18px;
+  top: 12px;
+  right: 12px;
 }
 
 .export-menu {
   position: relative;
   flex: 0 0 auto;
+}
+
+.export-menu.chart-export-menu {
+  position: absolute;
+  z-index: 8;
+  top: 12px;
+  right: 12px;
 }
 
 .export-menu-trigger {
@@ -1648,6 +1705,19 @@ tbody tr:hover td {
   margin-top: 2px;
 }
 
+.account-form-links {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.turnstile-host {
+  min-height: 65px;
+  display: flex;
+  align-items: center;
+}
+
 .account-text-button,
 .account-secondary {
   padding: 8px 10px;
@@ -1679,10 +1749,48 @@ tbody tr:hover td {
   font-size: 18px;
 }
 
+.account-summary dl {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+}
+
+.account-summary dl div {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px dotted #bdcbc7;
+}
+
+.account-summary dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.account-summary dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.account-verification .turnstile-host {
+  margin-top: 2px;
+}
+
 .account-message {
   margin-top: 14px !important;
   padding: 10px 12px;
-  border-left: 3px solid var(--rust);
+  border-left: 3px solid var(--teal);
+  color: #31534c !important;
+  background: #edf4f1;
+}
+
+.account-message.error {
+  border-left-color: var(--rust);
   color: #7e3945 !important;
   background: #f7eeee;
 }
@@ -2203,6 +2311,7 @@ tbody tr:hover td {
   .market-pulse-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
   .market-pulse .kpi-label { font-size: 11px; }
   .hero { min-height: auto; }
+  .account-header-status span { max-width: 90px; }
 }
 
 @media (max-width: 900px) {
@@ -2213,6 +2322,7 @@ tbody tr:hover td {
   .download-trigger,
   .feedback-trigger,
   .account-trigger { padding: 6px 9px; font-size: 10px; }
+  .account-header-status span { display: none; }
   .freshness { display: none; }
   .dashboard-shell { width: min(100% - 32px, 760px); }
   .hero { padding: 32px 0 26px; }
@@ -2247,6 +2357,8 @@ tbody tr:hover td {
   .header-title::before { height: 24px; }
   .site-header nav { grid-area: nav; justify-self: start; gap: 12px; }
   .header-actions { grid-area: download; }
+  .feedback-trigger { display: none; }
+  .account-header-status button { padding: 5px; font-size: 9px; }
   .table-panel thead { top: 102px; }
   .brand-mark { font-size: 9px; }
   .site-header nav a { font-size: 10px; }
