@@ -183,6 +183,10 @@ test("server-renders the CCER research dashboard shell", async () => {
   );
   assert.doesNotMatch(table02Source, /DataDownloadMenu/);
   assert.match(dashboardSource, /exportTitle="CCER每日成交量与成交均价"/);
+  assert.match(dashboardSource, /CCER与CEA月成交均价及相对溢价率/);
+  assert.match(dashboardSource, /carbonPriceComparisonOption/);
+  assert.match(dashboardSource, /value >= 0 \? "#c66b3d" : "#3e7f9b"/);
+  assert.match(dashboardSource, /className="two-column-grid trade-chart-grid"/);
   assert.match(dashboardSource, /selectedMode: false/);
   assert.match(dashboardSource, /legend: \{[\s\S]*?orient: "vertical",[\s\S]*?right: 4,[\s\S]*?selectedMode: false/);
   assert.ok((dashboardSource.match(/position: "top"/g) || []).length >= 3);
@@ -208,6 +212,32 @@ test("ships a complete and internally consistent dashboard dataset", async () =>
   assert.equal(payload.trades.length, payload.quality.tradeRecords);
   assert.equal(payload.projects.length, payload.quality.projectRecords);
   assert.equal(payload.trades.at(-1).date, payload.dataThrough);
+  assert.match(payload.carbonPriceComparison.ceaDataThrough, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(payload.carbonPriceComparison.ccerDataThrough, payload.dataThrough);
+  assert.ok(payload.carbonPriceComparison.months.length > 0);
+  const firstCcerTradeMonth = payload.trades.find((row) => row.volume > 0).date.slice(0, 7);
+  assert.equal(payload.carbonPriceComparison.months[0].month, firstCcerTradeMonth);
+  for (const row of payload.carbonPriceComparison.months) {
+    const ccerTrades = payload.trades.filter((trade) => trade.date.startsWith(row.month));
+    const ccerVolume = ccerTrades.reduce((total, trade) => total + trade.volume, 0);
+    const ccerTurnover = ccerTrades.reduce((total, trade) => total + trade.turnover, 0);
+    assert.ok(Math.abs(row.ccerVolume - ccerVolume) < 0.011);
+    assert.ok(Math.abs(row.ccerTurnover - ccerTurnover) < 0.011);
+    if (row.ccerVolume > 0) {
+      assert.ok(Math.abs(row.ccerPrice - row.ccerTurnover / row.ccerVolume) < 0.00011);
+    } else {
+      assert.equal(row.ccerPrice, null);
+    }
+    if (row.ceaVolume > 0) {
+      assert.ok(Math.abs(row.ceaPrice - row.ceaTurnover / row.ceaVolume) < 0.00011);
+    } else {
+      assert.equal(row.ceaPrice, null);
+    }
+    if (row.ccerPrice != null && row.ceaPrice != null) {
+      assert.ok(Math.abs(row.priceSpread - (row.ccerPrice - row.ceaPrice)) < 0.00011);
+      assert.ok(Math.abs(row.premiumRate - (row.ccerPrice / row.ceaPrice - 1)) < 0.0000011);
+    }
+  }
   const expectedMethodologies = [...new Set(payload.projects.map((row) => row.methodology))].sort((a, b) =>
     a.localeCompare(b, "zh-CN"),
   );

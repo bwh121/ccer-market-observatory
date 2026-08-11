@@ -28,6 +28,18 @@ type Trade = {
   sourceUrl: string;
 };
 
+type CarbonPriceMonth = {
+  month: string;
+  ccerVolume: number;
+  ccerTurnover: number;
+  ccerPrice: number | null;
+  ceaVolume: number;
+  ceaTurnover: number;
+  ceaPrice: number | null;
+  priceSpread: number | null;
+  premiumRate: number | null;
+};
+
 type Project = {
   snapshotKey: string;
   categoryCode: string;
@@ -87,6 +99,11 @@ type DashboardData = {
     cumulativeTurnover: number;
   };
   trades: Trade[];
+  carbonPriceComparison: {
+    ccerDataThrough: string;
+    ceaDataThrough: string;
+    months: CarbonPriceMonth[];
+  };
   projects: Project[];
   methodologies: string[];
   provinces: string[];
@@ -1483,6 +1500,135 @@ export default function DashboardClient() {
     };
   }, [data]);
 
+  const carbonPriceComparisonOption = useMemo<EChartsOption>(() => {
+    if (!data) return {};
+    const rows = data.carbonPriceComparison.months;
+    const premiumValues = rows
+      .map((row) => row.premiumRate == null ? null : Number((row.premiumRate * 100).toFixed(2)))
+      .filter((value): value is number => value != null);
+    const premiumMin = Math.min(0, ...premiumValues);
+    const premiumMax = Math.max(0, ...premiumValues);
+    const premiumSpan = Math.max(10, premiumMax - premiumMin);
+    const premiumAxisMin = premiumMin < 0
+      ? Math.floor((premiumMin - premiumSpan * 0.08) / 5) * 5
+      : 0;
+    const premiumAxisMax = premiumMax > 0
+      ? Math.ceil((premiumMax + premiumSpan * 0.08) / 5) * 5
+      : 0;
+
+    return {
+      animationDuration: 500,
+      color: ["#a14f39", "#147d70", "#c66b3d"],
+      legend: {
+        top: 2,
+        left: "center",
+        itemWidth: 16,
+        itemHeight: 8,
+        itemGap: 8,
+        textStyle: { color: "#4e5f5c", fontSize: 10 },
+      },
+      grid: { left: 62, right: 62, top: 58, bottom: 82 },
+      tooltip: {
+        trigger: "axis",
+        axisPointer: { type: "cross", crossStyle: { color: "#71817e" } },
+        formatter: (raw: unknown) => {
+          const params = (Array.isArray(raw) ? raw : [raw]) as Array<{ dataIndex?: number }>;
+          const row = rows[params[0]?.dataIndex || 0] || rows[0];
+          if (!row) return "";
+          const premium = row.premiumRate == null ? "—" : `${exactNumber(row.premiumRate * 100, 2)}%`;
+          const spread = row.priceSpread == null ? "—" : `${exactNumber(row.priceSpread, 2)} 元/吨`;
+          return [
+            `<strong>${row.month}</strong>`,
+            `CCER 月成交均价：${row.ccerPrice == null ? "—" : `${exactNumber(row.ccerPrice, 2)} 元/吨`}`,
+            `CEA 月成交均价：${row.ceaPrice == null ? "—" : `${exactNumber(row.ceaPrice, 2)} 元/吨`}`,
+            `CCER 相对 CEA 价差：${spread}`,
+            `CCER 相对 CEA 溢价率：${premium}`,
+          ].join("<br/>");
+        },
+      },
+      dataZoom: [
+        {
+          type: "slider",
+          start: 0,
+          end: 100,
+          height: 24,
+          bottom: 18,
+          brushSelect: false,
+          borderColor: "#c7d4d1",
+          fillerColor: "rgba(20,125,112,.16)",
+          handleStyle: { color: "#147d70" },
+        },
+      ],
+      xAxis: {
+        type: "category",
+        data: rows.map((row) => row.month),
+        axisLine: { lineStyle: { color: "#aab9b6" } },
+        axisLabel: { color: "#596966", hideOverlap: true },
+      },
+      yAxis: [
+        {
+          type: "value",
+          name: "价格（元/吨）",
+          min: 0,
+          nameTextStyle: { color: "#596966" },
+          splitLine: { lineStyle: { color: "#e7edeb" } },
+          axisLabel: { color: "#596966" },
+        },
+        {
+          type: "value",
+          name: "溢价率（%）",
+          min: premiumAxisMin,
+          max: premiumAxisMax,
+          nameTextStyle: { color: "#596966" },
+          splitLine: { show: false },
+          axisLabel: { color: "#596966", formatter: (value: number) => `${value}%` },
+        },
+      ],
+      series: [
+        {
+          name: "CCER 月均价",
+          type: "line",
+          data: rows.map((row) => row.ccerPrice),
+          showSymbol: true,
+          symbolSize: 5,
+          smooth: 0.16,
+          connectNulls: false,
+          z: 4,
+          lineStyle: { color: "#a14f39", width: 2.2 },
+          itemStyle: { color: "#a14f39" },
+        },
+        {
+          name: "CEA 月均价",
+          type: "line",
+          data: rows.map((row) => row.ceaPrice),
+          showSymbol: true,
+          symbolSize: 5,
+          smooth: 0.16,
+          connectNulls: false,
+          z: 4,
+          lineStyle: { color: "#147d70", width: 2.2 },
+          itemStyle: { color: "#147d70" },
+        },
+        {
+          name: "CCER 相对溢价率",
+          type: "bar",
+          yAxisIndex: 1,
+          barMaxWidth: 18,
+          z: 2,
+          itemStyle: { color: "#c66b3d" },
+          data: rows.map((row) => {
+            if (row.premiumRate == null) return null;
+            const value = Number((row.premiumRate * 100).toFixed(2));
+            return {
+              value,
+              itemStyle: { color: value >= 0 ? "#c66b3d" : "#3e7f9b" },
+            };
+          }),
+        },
+      ],
+    };
+  }, [data]);
+
   const statusSummary = useMemo(() => {
     if (!data) return [];
     return data.statusOrder.map((status) => {
@@ -2170,6 +2316,20 @@ export default function DashboardClient() {
       官方来源: trade.sourceUrl,
     })),
   }];
+  const carbonPriceComparisonExportSections: ExportSection[] = [{
+    title: "CCER与CEA月度价格对比",
+    rows: data.carbonPriceComparison.months.map((row) => ({
+      月份: row.month,
+      CCER成交量_吨: row.ccerVolume,
+      CCER成交额_元: row.ccerTurnover,
+      CCER月成交均价_元每吨: row.ccerPrice,
+      CEA成交量_吨: row.ceaVolume,
+      CEA成交额_元: row.ceaTurnover,
+      CEA月成交均价_元每吨: row.ceaPrice,
+      CCER相对CEA价差_元每吨: row.priceSpread,
+      CCER相对CEA溢价率_百分比: row.premiumRate == null ? null : Number((row.premiumRate * 100).toFixed(2)),
+    })),
+  }];
   const statusExportSections: ExportSection[] = [
     {
       title: "状态与方法学汇总",
@@ -2463,23 +2623,40 @@ export default function DashboardClient() {
             index="01"
             eyebrow="MARKET TRANSACTIONS"
             title="交易情况"
-            description="在同一时间轴观察全国 CCER 市场成交量、成交额和成交价格变化。"
+            description="观察全国 CCER 市场日度成交变化，并从月度口径比较 CCER 与全国碳市场 CEA 的价格关系。"
           />
-          <article className="panel wide-panel">
-            <PanelTitle
-              label="FIGURE 01"
-              title="每日成交量与成交均价"
-              note="拖动底部时间滑块调整区间；悬停查看日期、成交量、成交额和成交均价。"
-            />
-            <EChart
-              option={tradeOption}
-              className="trend-chart"
-              ariaLabel="全国CCER每日成交量和成交价格走势图"
-              exportTitle="CCER每日成交量与成交均价"
-              exportFileName="FIGURE-01-每日成交量与成交均价"
-              exportSections={tradeExportSections}
-            />
-          </article>
+          <div className="two-column-grid trade-chart-grid">
+            <article className="panel">
+              <PanelTitle
+                label="FIGURE 01"
+                title="每日成交量与成交均价"
+                note="拖动底部时间滑块调整区间；悬停查看日期、成交量、成交额和成交均价。"
+              />
+              <EChart
+                option={tradeOption}
+                className="trend-chart"
+                ariaLabel="全国CCER每日成交量和成交价格走势图"
+                exportTitle="CCER每日成交量与成交均价"
+                exportFileName="FIGURE-01-每日成交量与成交均价"
+                exportSections={tradeExportSections}
+              />
+            </article>
+            <article className="panel">
+              <PanelTitle
+                label="FIGURE 01B"
+                title="CCER与CEA月成交均价及相对溢价率"
+                note={`月均价按当月总成交额÷总成交量计算；暖色为溢价，冷色为折价。CEA 数据截至 ${data.carbonPriceComparison.ceaDataThrough}。`}
+              />
+              <EChart
+                option={carbonPriceComparisonOption}
+                className="trend-chart"
+                ariaLabel="CCER与CEA月成交均价及CCER相对CEA溢价率组合图"
+                exportTitle="CCER与CEA月成交均价及相对溢价率"
+                exportFileName="FIGURE-01B-CCER与CEA月成交均价及相对溢价率"
+                exportSections={carbonPriceComparisonExportSections}
+              />
+            </article>
+          </div>
         </section>
 
         <section id="development" className="dashboard-section">

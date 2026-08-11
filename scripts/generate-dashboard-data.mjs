@@ -13,13 +13,19 @@ const dataDir = path.join(
   "019f4bb3-63bc-7e62-96dc-895128b03979",
   "data",
 );
+const ceaDataDir = process.env.CEA_DATA_DIR
+  ? path.resolve(process.env.CEA_DATA_DIR)
+  : path.join(workspace, "outputs", "cea-market", "data");
 
 const readJson = async (name) => JSON.parse(await fs.readFile(path.join(dataDir, name), "utf8"));
-const [tradesRaw, projectsRaw, reductionsRaw, quality] = await Promise.all([
+const readCeaJson = async (name) => JSON.parse(await fs.readFile(path.join(ceaDataDir, name), "utf8"));
+const [tradesRaw, projectsRaw, reductionsRaw, quality, ceaDailyRaw, ceaQuality] = await Promise.all([
   readJson("trade_daily.json"),
   readJson("project_details.json"),
   readJson("reduction_amount_details.json"),
   readJson("quality_report.json"),
+  readCeaJson("daily_wide.json"),
+  readCeaJson("quality_report.json"),
 ]);
 
 const STATUS_ORDER = [
@@ -42,6 +48,30 @@ const normalizeDate = (value) => {
   const digits = String(value || "").replace(/\D/g, "");
   if (digits.length < 8) return "";
   return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+};
+
+const monthRange = (start, end) => {
+  if (!/^\d{4}-\d{2}$/.test(start || "") || !/^\d{4}-\d{2}$/.test(end || "") || start > end) return [];
+  const result = [];
+  let [year, month] = start.split("-").map(Number);
+  while (`${year}-${String(month).padStart(2, "0")}` <= end) {
+    result.push(`${year}-${String(month).padStart(2, "0")}`);
+    month += 1;
+    if (month === 13) {
+      year += 1;
+      month = 1;
+    }
+  }
+  return result;
+};
+
+const addMonthlyTrade = (index, date, volume, turnover) => {
+  const month = String(date || "").slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(month)) return;
+  if (!index.has(month)) index.set(month, { volume: 0, turnover: 0 });
+  const bucket = index.get(month);
+  bucket.volume += asNumber(volume);
+  bucket.turnover += asNumber(turnover);
 };
 
 const reductionRegistrationRegistryPath = path.join(
@@ -238,6 +268,48 @@ const trades = tradesRaw
   }))
   .sort((a, b) => String(a.date).localeCompare(String(b.date)));
 
+if (ceaQuality.status === "FAIL" || Number(ceaQuality.summary?.error_issues || 0) > 0) {
+  throw new Error("CEA quality report is not publishable");
+}
+
+const ccerMonthly = new Map();
+for (const row of trades) addMonthlyTrade(ccerMonthly, row.date, row.volume, row.turnover);
+const ceaMonthly = new Map();
+for (const row of ceaDailyRaw) {
+  if (row.subject_code !== "COMCEA") continue;
+  addMonthlyTrade(ceaMonthly, row.trade_date, row.subtotal_volume_t, row.subtotal_amount_cny);
+}
+const firstCcerMonth = trades.find((row) => row.volume > 0)?.date.slice(0, 7) || "";
+const latestCcerMonth = trades.at(-1)?.date.slice(0, 7) || "";
+const carbonPriceMonths = monthRange(firstCcerMonth, latestCcerMonth).map((month) => {
+  const ccer = ccerMonthly.get(month) || { volume: 0, turnover: 0 };
+  const cea = ceaMonthly.get(month) || { volume: 0, turnover: 0 };
+  const ccerPrice = ccer.volume > 0 ? Number((ccer.turnover / ccer.volume).toFixed(4)) : null;
+  const ceaPrice = cea.volume > 0 ? Number((cea.turnover / cea.volume).toFixed(4)) : null;
+  const priceSpread = ccerPrice != null && ceaPrice != null
+    ? Number((ccerPrice - ceaPrice).toFixed(4))
+    : null;
+  const premiumRate = ccerPrice != null && ceaPrice != null && ceaPrice > 0
+    ? Number((ccerPrice / ceaPrice - 1).toFixed(6))
+    : null;
+  return {
+    month,
+    ccerVolume: Number(ccer.volume.toFixed(2)),
+    ccerTurnover: Number(ccer.turnover.toFixed(2)),
+    ccerPrice,
+    ceaVolume: Number(cea.volume.toFixed(2)),
+    ceaTurnover: Number(cea.turnover.toFixed(2)),
+    ceaPrice,
+    priceSpread,
+    premiumRate,
+  };
+});
+const carbonPriceComparison = {
+  ccerDataThrough: quality.trade.date_max,
+  ceaDataThrough: ceaQuality.summary?.last_data_date || "",
+  months: carbonPriceMonths,
+};
+
 const latestTrade = trades.at(-1);
 const tradeSummary = latestTrade
   ? {
@@ -277,6 +349,7 @@ const dashboard = {
   dataThrough: quality.trade.date_max,
   tradeSummary,
   trades,
+  carbonPriceComparison,
   projects,
   methodologies,
   provinces,
@@ -295,12 +368,15 @@ const dashboard = {
     actualReduction: "已登记减排量页面中，各项目减排量申请明细（applyVol）跨年度求和。",
     actualAnnualAverage: "项目实际登记减排量 ÷ 该项目减排量申请明细覆盖年份数。",
     cumulativeAveragePrice: "最新累计成交额 ÷ 最新累计成交量。",
+    monthlyWeightedAveragePrice: "CCER、CEA 月成交均价均按当月总成交额 ÷ 当月总成交量计算。",
+    ccerCeaPremiumRate: "CCER 相对 CEA 溢价率 = CCER 月成交均价 ÷ CEA 月成交均价 - 1。",
     achievementRate:
       "实际登记年均减排量 ÷ 预计年均减排量；方法学层面采用两项指标汇总值之比。",
     statusGrain: "项目状态图按官网七类公开页面中的状态记录计数；同一项目可能在不同状态页面出现。",
   },
   sources: [
     { label: "全国 CCER 市场每日行情", url: quality.sources.trade_index },
+    { label: "全国碳排放配额（CEA）交易数据", url: "https://shyx.cneeex.com/qdata.html" },
     { label: "项目与减排量信息公开", url: quality.sources.project_list },
     {
       label: "中国省级行政区划底图",
@@ -328,6 +404,8 @@ console.log(
     {
       outputPath,
       trades: trades.length,
+      carbonPriceMonths: carbonPriceMonths.length,
+      ceaDataThrough: carbonPriceComparison.ceaDataThrough,
       projects: projects.length,
       methodologies: methodologies.length,
       registeredReductionRows: projects.filter((row) => row.categoryCode === "4").length,
