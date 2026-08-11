@@ -19,12 +19,12 @@ const ceaDataDir = process.env.CEA_DATA_DIR
 
 const readJson = async (name) => JSON.parse(await fs.readFile(path.join(dataDir, name), "utf8"));
 const readCeaJson = async (name) => JSON.parse(await fs.readFile(path.join(ceaDataDir, name), "utf8"));
-const [tradesRaw, projectsRaw, reductionsRaw, quality, ceaDailyRaw, ceaQuality] = await Promise.all([
+const [tradesRaw, projectsRaw, reductionsRaw, quality, ceaMonthlyRaw, ceaQuality] = await Promise.all([
   readJson("trade_daily.json"),
   readJson("project_details.json"),
   readJson("reduction_amount_details.json"),
   readJson("quality_report.json"),
-  readCeaJson("daily_wide.json"),
+  readCeaJson("monthly.json"),
   readCeaJson("quality_report.json"),
 ]);
 
@@ -275,9 +275,13 @@ if (ceaQuality.status === "FAIL" || Number(ceaQuality.summary?.error_issues || 0
 const ccerMonthly = new Map();
 for (const row of trades) addMonthlyTrade(ccerMonthly, row.date, row.volume, row.turnover);
 const ceaMonthly = new Map();
-for (const row of ceaDailyRaw) {
-  if (row.subject_code !== "COMCEA") continue;
-  addMonthlyTrade(ceaMonthly, row.trade_date, row.subtotal_volume_t, row.subtotal_amount_cny);
+for (const row of ceaMonthlyRaw) {
+  const month = String(row.month || "");
+  if (!/^\d{4}-\d{2}$/.test(month)) continue;
+  ceaMonthly.set(month, {
+    volume: asNumber(row.volume_t),
+    turnover: asNumber(row.amount_cny),
+  });
 }
 const firstCcerMonth = trades.find((row) => row.volume > 0)?.date.slice(0, 7) || "";
 const latestCcerMonth = trades.at(-1)?.date.slice(0, 7) || "";
