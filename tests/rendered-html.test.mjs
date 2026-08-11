@@ -111,7 +111,10 @@ test("server-renders the CCER research dashboard shell", async () => {
   assert.match(dashboardSource, /stack:\s*"project-count"/);
   assert.match(dashboardSource, /stack:\s*"expected-annual"/);
   assert.match(dashboardSource, /trigger:\s*"item"/);
-  assert.match(dashboardSource, /shadowBlur:\s*14/);
+  assert.match(dashboardSource, /transitionDuration:\s*0/);
+  assert.match(dashboardSource, /onPlotAreaClick=/);
+  assert.doesNotMatch(dashboardSource, /blurScope:\s*"coordinateSystem"/);
+  assert.match(dashboardSource, /各方法学领域单个项目减排量登记情况/);
   assert.match(dashboardSource, /type:\s*"boxplot"/);
   assert.match(dashboardSource, /projectRegistrationGranularity/);
   assert.match(dashboardSource, /reductionRegistrationGranularity/);
@@ -119,6 +122,7 @@ test("server-renders the CCER research dashboard shell", async () => {
   assert.match(chartSource, /label: "保存图片"/);
   assert.match(chartSource, /ExportActionMenu/);
   assert.match(chartSource, /exportSections/);
+  assert.match(chartSource, /chart\.getZr\(\)\.on\("click", plotHandler\)/);
   assert.match(dataActionsSource, /来源：全国 CCER 市场信息追踪 · 作者：逃跑大魔王/);
   assert.match(dataActionsSource, /下载数据/);
   assert.match(dataActionsSource, /className="export-menu-trigger"/);

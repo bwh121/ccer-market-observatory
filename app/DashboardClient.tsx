@@ -1518,18 +1518,17 @@ export default function DashboardClient() {
           data: statusSummary.map((status) => status.methodologies.find((row) => row.methodology === methodology)?.count || 0),
           itemStyle: { color, opacity: 0.86 },
           emphasis: {
-            focus: "self" as const,
-            blurScope: "coordinateSystem" as const,
             itemStyle: {
+              color,
               opacity: 1,
               borderColor: "#14211f",
-              borderWidth: 2,
-              shadowBlur: 14,
-              shadowColor: "rgba(20, 33, 31, 0.38)",
+              borderWidth: 1,
+              shadowBlur: 6,
+              shadowColor: "rgba(20, 33, 31, 0.28)",
             },
           },
-          blur: { itemStyle: { opacity: 0.24 } },
           selectedMode: false,
+          cursor: "pointer",
           barMaxWidth: 34,
         },
         {
@@ -1541,18 +1540,17 @@ export default function DashboardClient() {
           data: statusSummary.map((status) => status.methodologies.find((row) => row.methodology === methodology)?.expectedAnnual || 0),
           itemStyle: { color, opacity: 0.62 },
           emphasis: {
-            focus: "self" as const,
-            blurScope: "coordinateSystem" as const,
             itemStyle: {
+              color,
               opacity: 1,
               borderColor: "#14211f",
-              borderWidth: 2,
-              shadowBlur: 14,
-              shadowColor: "rgba(20, 33, 31, 0.38)",
+              borderWidth: 1,
+              shadowBlur: 6,
+              shadowColor: "rgba(20, 33, 31, 0.28)",
             },
           },
-          blur: { itemStyle: { opacity: 0.18 } },
           selectedMode: false,
+          cursor: "pointer",
           barMaxWidth: 34,
         },
       ];
@@ -1572,6 +1570,9 @@ export default function DashboardClient() {
       tooltip: {
         trigger: "item",
         confine: true,
+        enterable: false,
+        transitionDuration: 0,
+        hideDelay: 100,
         formatter: (raw: unknown) => {
           const params = raw as {
             dataIndex?: number;
@@ -2537,6 +2538,39 @@ export default function DashboardClient() {
                   "项目按方法学领域分组；当前状态下全部为空的字段已自动收起。点击项目名称可打开官方详情页。",
                 );
               }}
+              onPlotAreaClick={({ offsetX, offsetY }, chart) => {
+                const gridLeft = 66;
+                const gridRight = 260;
+                const plotWidth = chart.getWidth() - gridLeft - gridRight;
+                if (plotWidth <= 0 || statusSummary.length === 0) return;
+
+                const bandWidth = plotWidth / statusSummary.length;
+                const dataIndex = Math.floor((offsetX - gridLeft) / bandWidth);
+                const row = statusSummary[dataIndex];
+                if (!row) return;
+
+                const categoryCenter = gridLeft + (dataIndex + 0.5) * bandWidth;
+                const clickableHalfWidth = Math.min(48, bandWidth * 0.42);
+                const baseline = Number(chart.convertToPixel({ yAxisIndex: 0 }, 0));
+                const countTop = Number(chart.convertToPixel({ yAxisIndex: 0 }, row.count));
+                const annualTop = Number(chart.convertToPixel({ yAxisIndex: 1 }, row.expectedAnnual));
+                const barTop = Math.min(countTop, annualTop);
+                if (
+                  Math.abs(offsetX - categoryCenter) > clickableHalfWidth
+                  || !Number.isFinite(baseline)
+                  || !Number.isFinite(barTop)
+                  || offsetY < barTop - 6
+                  || offsetY > baseline + 6
+                ) return;
+
+                openGroupedProjectRows(
+                  `${row.name} · ${row.count} 条项目记录`,
+                  row.rows,
+                  STATUS_DETAIL_COLUMNS,
+                  (project) => projectMeta(project, STATUS_DETAIL_COLUMNS),
+                  "项目按方法学领域分组；当前状态下全部为空的字段已自动收起。点击项目名称可打开官方详情页。",
+                );
+              }}
             />
           </article>
 
@@ -2646,7 +2680,7 @@ export default function DashboardClient() {
             <article className="panel">
               <PanelTitle
                 label="FIGURE 07"
-                title="各方法学减排绩效分布"
+                title="各方法学领域单个项目减排量登记情况"
                 note="左右两张箱形图共用方法学领域轴，分别展示项目实际登记年均减排量和预计年均减排量达成率的分布。"
               />
               <EChart
@@ -2654,8 +2688,8 @@ export default function DashboardClient() {
                 className="boxplot-chart"
                 style={{ height: Math.max(540, reductionComparison.length * 54 + 128) }}
                 ariaLabel="各方法学实际登记年均减排量与预计年均减排量达成率箱形图"
-                exportTitle="CCER各方法学项目减排绩效分布"
-                exportFileName="FIGURE-07-各方法学减排绩效分布"
+                exportTitle="CCER各方法学领域单个项目减排量登记情况"
+                exportFileName="FIGURE-07-各方法学领域单个项目减排量登记情况"
                 exportSections={reductionComparisonExportSections}
                 onClick={(params) => {
                   const name = String(params.name || "");

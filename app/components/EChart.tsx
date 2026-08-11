@@ -12,6 +12,7 @@ type EChartProps = {
   className?: string;
   style?: CSSProperties;
   onClick?: (params: Record<string, unknown>) => void;
+  onPlotAreaClick?: (position: { offsetX: number; offsetY: number }, chart: echarts.ECharts) => void;
   ariaLabel: string;
   exportTitle?: string;
   exportFileName?: string;
@@ -23,6 +24,7 @@ export function EChart({
   className,
   style,
   onClick,
+  onPlotAreaClick,
   ariaLabel,
   exportTitle,
   exportFileName,
@@ -31,10 +33,15 @@ export function EChart({
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
   const clickRef = useRef(onClick);
+  const plotAreaClickRef = useRef(onPlotAreaClick);
 
   useEffect(() => {
     clickRef.current = onClick;
   }, [onClick]);
+
+  useEffect(() => {
+    plotAreaClickRef.current = onPlotAreaClick;
+  }, [onPlotAreaClick]);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -42,12 +49,21 @@ export function EChart({
     chartRef.current = chart;
     chart.setOption(option, true);
     const handler = (params: Record<string, unknown>) => clickRef.current?.(params);
+    const plotHandler = (event: { target?: unknown; offsetX?: number; offsetY?: number }) => {
+      if (event.target || !Number.isFinite(event.offsetX) || !Number.isFinite(event.offsetY)) return;
+      plotAreaClickRef.current?.(
+        { offsetX: Number(event.offsetX), offsetY: Number(event.offsetY) },
+        chart,
+      );
+    };
     chart.on("click", handler);
+    chart.getZr().on("click", plotHandler);
     const observer = new ResizeObserver(() => chart.resize());
     observer.observe(ref.current);
     return () => {
       observer.disconnect();
       chart.off("click", handler);
+      chart.getZr().off("click", plotHandler);
       chart.dispose();
       chartRef.current = null;
     };
