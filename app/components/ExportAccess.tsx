@@ -116,6 +116,9 @@ const translateAuthMessage = (message: string) => {
   if (normalized.includes("email not confirmed")) return "邮箱尚未验证，请先打开验证邮件完成确认。";
   if (normalized.includes("user already registered")) return "该邮箱已经注册，请直接登录或找回密码。";
   if (normalized.includes("password should be")) return "密码强度不足，请至少使用 8 位字符。";
+  if (normalized.includes("over_email_send_rate_limit") || normalized.includes("email rate limit")) {
+    return "验证邮件发送已达到当前频率限制，请稍后再试。";
+  }
   if (normalized.includes("rate limit") || normalized.includes("security purposes")) return "请求过于频繁，请稍后再试。";
   if (normalized.includes("captcha")) return "安全验证失败或已过期，请重新验证。";
   return message;
@@ -127,8 +130,11 @@ const responseError = async (response: Response) => {
     message?: string;
     error_description?: string;
     error?: string;
+    code?: string;
   };
-  const message = payload.msg || payload.message || payload.error_description || payload.error;
+  const message = [payload.code, payload.msg || payload.message || payload.error_description || payload.error]
+    .filter(Boolean)
+    .join(" ");
   return translateAuthMessage(message || `请求失败（${response.status}）`);
 };
 
@@ -253,6 +259,7 @@ export function ExportAccessProvider({ children }: { children: ReactNode }) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaVersion, setCaptchaVersion] = useState(0);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"info" | "error">("info");
@@ -279,7 +286,13 @@ export function ExportAccessProvider({ children }: { children: ReactNode }) {
     setPassword("");
     setConfirmPassword("");
     setCaptchaToken("");
+    setCaptchaVersion((current) => current + 1);
     updateMessage("");
+  };
+
+  const resetCaptcha = () => {
+    setCaptchaToken("");
+    setCaptchaVersion((current) => current + 1);
   };
 
   useEffect(() => {
@@ -490,15 +503,18 @@ export function ExportAccessProvider({ children }: { children: ReactNode }) {
     try {
       const normalized = normalizeEmail(email);
       if (!validEmail(normalized)) throw new Error("请输入有效邮箱地址。");
+      if (TURNSTILE_SITE_KEY && !captchaToken) throw new Error("请先完成安全验证。");
       const next = toSession(await authRequest<AuthResponse>("token?grant_type=password", {
         email: normalized,
         password,
+        ...captchaBody(captchaToken),
       }));
       if (!next) throw new Error("登录响应不完整，请稍后重试。");
       finishAuthentication(next);
     } catch (reason) {
       updateMessage(reason instanceof Error ? reason.message : "登录失败，请检查邮箱和密码。", "error");
     } finally {
+      resetCaptcha();
       setBusy(false);
     }
   };
@@ -523,14 +539,13 @@ export function ExportAccessProvider({ children }: { children: ReactNode }) {
         setEmail(normalized);
         setPassword("");
         setConfirmPassword("");
-        setCaptchaToken("");
         setView("verifyEmail");
-        updateMessage("验证邮件已发送，请打开邮件中的链接完成注册。");
+        updateMessage("验证邮件已交给发信服务器，请打开邮件中的链接完成注册。");
       }
     } catch (reason) {
-      setCaptchaToken("");
       updateMessage(reason instanceof Error ? reason.message : "注册失败，请稍后重试。", "error");
     } finally {
+      resetCaptcha();
       setBusy(false);
     }
   };
@@ -540,17 +555,19 @@ export function ExportAccessProvider({ children }: { children: ReactNode }) {
     setBusy(true);
     updateMessage("");
     try {
+      const normalized = normalizeEmail(email);
+      if (!validEmail(normalized)) throw new Error("请输入有效邮箱地址。");
       if (TURNSTILE_SITE_KEY && !captchaToken) throw new Error("请先完成安全验证。");
       await authRequest<Record<string, unknown>>(
         `resend?redirect_to=${encodeURIComponent(redirectUrl())}`,
-        { type: "signup", email: normalizeEmail(email), ...captchaBody(captchaToken) },
+        { type: "signup", email: normalized, ...captchaBody(captchaToken) },
       );
-      setCaptchaToken("");
-      updateMessage("新的验证邮件已发送，请检查收件箱和垃圾邮件目录。");
+      setEmail(normalized);
+      updateMessage("新的验证邮件已交给发信服务器，请检查收件箱和垃圾邮件目录。");
     } catch (reason) {
-      setCaptchaToken("");
       updateMessage(reason instanceof Error ? reason.message : "验证邮件发送失败。", "error");
     } finally {
+      resetCaptcha();
       setBusy(false);
     }
   };
@@ -568,13 +585,12 @@ export function ExportAccessProvider({ children }: { children: ReactNode }) {
         { email: normalized, ...captchaBody(captchaToken) },
       );
       setEmail(normalized);
-      setCaptchaToken("");
       setView("recoverySent");
-      updateMessage("密码重置邮件已发送，请通过邮件中的安全链接设置新密码。");
+      updateMessage("密码重置邮件已交给发信服务器，请通过邮件中的安全链接设置新密码。");
     } catch (reason) {
-      setCaptchaToken("");
       updateMessage(reason instanceof Error ? reason.message : "重置邮件发送失败。", "error");
     } finally {
+      resetCaptcha();
       setBusy(false);
     }
   };
@@ -691,10 +707,12 @@ export function ExportAccessProvider({ children }: { children: ReactNode }) {
               <form className="account-form" onSubmit={submitLogin}>
                 <label><span>邮箱</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
                 <label><span>密码</span><input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
+                <TurnstileWidget key={`login-${captchaVersion}`} action="login" onToken={setCaptchaToken} />
                 <button className="download-primary" type="submit" disabled={busy}>{busy ? "登录中…" : "登录"}</button>
                 <div className="account-form-links">
                   <button type="button" className="account-text-button" onClick={() => changeView("register")}>没有账号？注册</button>
                   <button type="button" className="account-text-button" onClick={() => changeView("recover")}>忘记密码</button>
+                  <button type="button" className="account-text-button" onClick={() => changeView("verifyEmail")}>未收到验证邮件？</button>
                 </div>
               </form>
             ) : null}
@@ -704,17 +722,18 @@ export function ExportAccessProvider({ children }: { children: ReactNode }) {
                 <label><span>邮箱</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
                 <label><span>设置密码</span><input type="password" autoComplete="new-password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
                 <label><span>再次确认密码</span><input type="password" autoComplete="new-password" minLength={8} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required /></label>
-                <TurnstileWidget action="signup" onToken={setCaptchaToken} />
+                <TurnstileWidget key={`signup-${captchaVersion}`} action="signup" onToken={setCaptchaToken} />
                 <button className="download-primary" type="submit" disabled={busy}>{busy ? "正在提交…" : "注册并发送验证邮件"}</button>
                 <button type="button" className="account-text-button" onClick={() => changeView("login")}>已有账号？返回登录</button>
               </form>
             ) : null}
 
             {view === "verifyEmail" ? (
-              <form className="account-notice account-verification" onSubmit={submitResendVerification}>
-                <strong>验证邮件已发送至 {email}</strong>
-                <p>打开邮件中的验证链接后，账号才会正式生效。若未收到，请检查垃圾邮件目录。</p>
-                <TurnstileWidget action="resend-signup" onToken={setCaptchaToken} />
+              <form className="account-form account-verification" onSubmit={submitResendVerification}>
+                <strong>重新发送验证邮件</strong>
+                <p>邮件通常会在几分钟内到达。若未收到，请检查垃圾邮件目录；完成下方安全验证后可重新发送。</p>
+                <label><span>注册邮箱</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
+                <TurnstileWidget key={`resend-${captchaVersion}`} action="resend-signup" onToken={setCaptchaToken} />
                 <button className="account-secondary" type="submit" disabled={busy}>{busy ? "发送中…" : "重新发送验证邮件"}</button>
                 <button type="button" className="account-text-button" onClick={() => changeView("login")}>返回登录</button>
               </form>
@@ -723,7 +742,7 @@ export function ExportAccessProvider({ children }: { children: ReactNode }) {
             {view === "recover" ? (
               <form className="account-form" onSubmit={submitRecoveryRequest}>
                 <label><span>注册邮箱</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
-                <TurnstileWidget action="recover" onToken={setCaptchaToken} />
+                <TurnstileWidget key={`recover-${captchaVersion}`} action="recover" onToken={setCaptchaToken} />
                 <button className="download-primary" type="submit" disabled={busy}>{busy ? "正在发送…" : "发送密码重置邮件"}</button>
                 <button type="button" className="account-text-button" onClick={() => changeView("login")}>返回登录</button>
               </form>

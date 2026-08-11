@@ -129,7 +129,12 @@ test("server-renders the CCER research dashboard shell", async () => {
   assert.match(stylesSource, /\.status-stacked-chart\s*\{[\s\S]*?height: 470px/);
   assert.match(exportAccessSource, /token\?grant_type=password/);
   assert.match(exportAccessSource, /email: normalized/);
+  assert.match(exportAccessSource, /token\?grant_type=password"[\s\S]*?\.\.\.captchaBody\(captchaToken\)/);
+  assert.match(exportAccessSource, /action="login"/);
+  assert.match(exportAccessSource, /captchaVersion/);
   assert.match(exportAccessSource, /再次确认密码/);
+  assert.match(exportAccessSource, /resend\?redirect_to=/);
+  assert.match(exportAccessSource, /未收到验证邮件？/);
   assert.match(exportAccessSource, /recover\?redirect_to=/);
   assert.match(exportAccessSource, /method: "PUT", token: session\.access_token/);
   assert.match(exportAccessSource, /Cloudflare Turnstile/);

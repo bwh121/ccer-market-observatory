@@ -42,17 +42,17 @@ Supabase 会向函数提供 `SUPABASE_URL` 和 `SUPABASE_SERVICE_ROLE_KEY`。ser
 
 日常登录使用邮箱和密码。找回密码通过 Supabase recovery email 返回网站后设置新密码。
 
-## 4. Resend 邮件
+## 4. 自定义 SMTP 邮件
 
-可先使用 Supabase 内置邮件服务做小规模测试。正式开放注册前，建议在 `Authentication > SMTP Settings` 配置 Resend：
+生产环境必须在 `Authentication > SMTP Settings` 启用自定义 SMTP。当前项目使用已授权的新浪邮箱 SMTP；如后续有独立域名，可切换到 Resend 等事务邮件服务以获得更完整的投递统计。
 
-- Host：`smtp.resend.com`
-- Port：`465` 或 `587`
-- Username：`resend`
-- Password：Resend API key
-- Sender：已在 Resend 验证域名下的发件地址
+- 新浪 Host：`smtp.sina.com`
+- 新浪 Port：`465`（SSL）优先，`587` 可作为兼容端口
+- Username / Sender：已开启客户端服务的完整新浪邮箱地址
+- Password：新浪邮箱客户端授权码
+- Supabase 邮件发送额度：自定义 SMTP 的初始值设为 `30 emails/h`
 
-Resend API key 只在 Supabase SMTP 设置中填写，不放入仓库或聊天记录。
+SMTP 授权码或事务邮件 API key 只在 Supabase SMTP 设置中填写，不放入仓库或聊天记录。
 
 ## 5. Cloudflare Turnstile
 
@@ -60,7 +60,7 @@ Resend API key 只在 Supabase SMTP 设置中填写，不放入仓库或聊天�
 2. 当前生产 Site key 已作为公开构建配置的兜底值写入部署流程；如后续轮换，可用 GitHub Actions 仓库变量 `TURNSTILE_SITE_KEY` 覆盖。
 3. 将 Secret key 直接填入 Supabase `Authentication > Attack Protection > CAPTCHA`，选择 Cloudflare Turnstile。
 
-前端会在注册、重新发送验证邮件和找回密码入口传递 CAPTCHA token。Secret key 不得进入 GitHub 或前端。
+前端会在登录、注册、重新发送验证邮件和找回密码入口传递 CAPTCHA token，并在每次提交后刷新一次性挑战。Secret key 不得进入 GitHub 或前端。
 
 ## 6. GitHub Pages 构建变量
 
