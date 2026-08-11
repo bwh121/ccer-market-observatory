@@ -57,7 +57,7 @@ Resend API key 只在 Supabase SMTP 设置中填写，不放入仓库或聊天�
 ## 5. Cloudflare Turnstile
 
 1. 在 Cloudflare 创建 Turnstile 站点，允许域名 `bwh121.github.io`。
-2. 将 Site key 保存为 GitHub Actions 仓库变量 `TURNSTILE_SITE_KEY`。
+2. 当前生产 Site key 已作为公开构建配置的兜底值写入部署流程；如后续轮换，可用 GitHub Actions 仓库变量 `TURNSTILE_SITE_KEY` 覆盖。
 3. 将 Secret key 直接填入 Supabase `Authentication > Attack Protection > CAPTCHA`，选择 Cloudflare Turnstile。
 
 前端会在注册、重新发送验证邮件和找回密码入口传递 CAPTCHA token。Secret key 不得进入 GitHub 或前端。
@@ -68,7 +68,7 @@ Resend API key 只在 Supabase SMTP 设置中填写，不放入仓库或聊天�
 
 - `SUPABASE_URL`：可选；部署流程已有当前项目公共地址兜底。
 - `SUPABASE_PUBLISHABLE_KEY`：可选；部署流程已有当前公开密钥兜底，轮换密钥时应更新变量。
-- `TURNSTILE_SITE_KEY`：正式开放注册前必须配置。
+- `TURNSTILE_SITE_KEY`：可选；仅在轮换当前生产 Site key 时覆盖部署流程中的公开兜底值。
 
 Publishable key 和 Turnstile Site key 可以公开；Supabase service role key、Resend API key 和 Turnstile Secret key必须只保存在对应后端平台。
 
