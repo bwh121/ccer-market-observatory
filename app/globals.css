@@ -895,6 +895,18 @@ a {
   margin: 14px 0;
 }
 
+.trade-chart-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.trade-chart-grid .trend-chart {
+  width: 100%;
+  height: auto;
+  min-height: 250px;
+  max-height: 300px;
+  aspect-ratio: 5 / 1;
+}
+
 .map-panel {
   min-height: 535px;
 }

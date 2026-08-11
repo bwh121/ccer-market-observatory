@@ -9,6 +9,7 @@ import type { ExportSection } from "./DataActions";
 
 type EChartProps = {
   option: EChartsOption;
+  group?: string;
   className?: string;
   style?: CSSProperties;
   onClick?: (params: Record<string, unknown>) => void;
@@ -21,6 +22,7 @@ type EChartProps = {
 
 export function EChart({
   option,
+  group,
   className,
   style,
   onClick,
@@ -46,6 +48,10 @@ export function EChart({
   useEffect(() => {
     if (!ref.current) return;
     const chart = echarts.init(ref.current, undefined, { renderer: "canvas" });
+    if (group) {
+      chart.group = group;
+      echarts.connect(group);
+    }
     chartRef.current = chart;
     chart.setOption(option, true);
     const handler = (params: Record<string, unknown>) => clickRef.current?.(params);
@@ -64,10 +70,11 @@ export function EChart({
       observer.disconnect();
       chart.off("click", handler);
       chart.getZr().off("click", plotHandler);
+      if (group) echarts.disconnect(group);
       chart.dispose();
       chartRef.current = null;
     };
-  }, [option]);
+  }, [group, option]);
 
   const canExport = Boolean(exportTitle && exportFileName && exportSections);
   return (

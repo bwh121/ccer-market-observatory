@@ -1424,10 +1424,12 @@ export default function DashboardClient() {
 
   const tradeOption = useMemo<EChartsOption>(() => {
     if (!data) return {};
+    const rangeStart = `${data.carbonPriceComparison.months[0]?.month || data.trades[0]?.date.slice(0, 7)}-01`;
+    const rangeEnd = data.trades.at(-1)?.date;
     return {
       animationDuration: 500,
       color: ["#9fc8bf", "#9b4d5b"],
-      grid: { left: 58, right: 66, top: 18, bottom: 82 },
+      grid: { left: 58, right: 66, top: 18, bottom: 62 },
       tooltip: {
         trigger: "axis",
         axisPointer: { type: "cross", crossStyle: { color: "#71817e" } },
@@ -1444,11 +1446,12 @@ export default function DashboardClient() {
       },
       dataZoom: [
         {
+          id: "shared-trade-range",
           type: "slider",
           start: 0,
           end: 100,
-          height: 24,
-          bottom: 18,
+          height: 20,
+          bottom: 10,
           brushSelect: false,
           borderColor: "#c7d4d1",
           fillerColor: "rgba(20,125,112,.18)",
@@ -1456,10 +1459,11 @@ export default function DashboardClient() {
         },
       ],
       xAxis: {
-        type: "category",
-        data: data.trades.map((row) => row.date),
+        type: "time",
+        min: rangeStart,
+        max: rangeEnd,
         axisLine: { lineStyle: { color: "#aab9b6" } },
-        axisLabel: { color: "#596966", hideOverlap: true },
+        axisLabel: { color: "#596966", hideOverlap: true, formatter: "{yyyy}-{MM}" },
       },
       yAxis: [
         {
@@ -1481,15 +1485,15 @@ export default function DashboardClient() {
         {
           name: "每日成交量",
           type: "bar",
-          data: data.trades.map((row) => row.volume),
-          barMaxWidth: 18,
+          data: data.trades.map((row) => [row.date, row.volume]),
+          barMaxWidth: 14,
           itemStyle: { color: "#8fbfb4" },
         },
         {
           name: "成交均价",
           type: "line",
           yAxisIndex: 1,
-          data: data.trades.map((row) => row.price),
+          data: data.trades.map((row) => [row.date, row.price]),
           showSymbol: false,
           smooth: 0.18,
           lineStyle: { color: "#9b4d5b", width: 2 },
@@ -1503,31 +1507,40 @@ export default function DashboardClient() {
   const carbonPriceComparisonOption = useMemo<EChartsOption>(() => {
     if (!data) return {};
     const rows = data.carbonPriceComparison.months;
+    const rangeStart = `${rows[0]?.month || data.trades[0]?.date.slice(0, 7)}-01`;
+    const rangeEnd = data.trades.at(-1)?.date;
     const premiumValues = rows
       .map((row) => row.premiumRate == null ? null : Number((row.premiumRate * 100).toFixed(2)))
       .filter((value): value is number => value != null);
     const premiumMin = Math.min(0, ...premiumValues);
     const premiumMax = Math.max(0, ...premiumValues);
-    const premiumSpan = Math.max(10, premiumMax - premiumMin);
-    const premiumAxisMin = premiumMin < 0
-      ? Math.floor((premiumMin - premiumSpan * 0.08) / 5) * 5
-      : 0;
-    const premiumAxisMax = premiumMax > 0
-      ? Math.ceil((premiumMax + premiumSpan * 0.08) / 5) * 5
-      : 0;
+    const premiumAxisMin = Math.floor(Math.min(-40, premiumMin * 3) / 10) * 10;
+    const premiumAxisMax = Math.ceil(Math.max(80, premiumMax * 3) / 10) * 10;
+    const noCcerTradeRanges: Array<[string, string]> = [];
+    let noTradeStart: number | null = null;
+    rows.forEach((row, index) => {
+      const hasNoTrade = row.ccerVolume <= 0 || row.ccerPrice == null;
+      if (hasNoTrade && noTradeStart == null) noTradeStart = index;
+      if (noTradeStart == null || (hasNoTrade && index < rows.length - 1)) return;
+      const endIndex = hasNoTrade ? index : index - 1;
+      const [year, month] = rows[endIndex].month.split("-").map(Number);
+      const nextMonth = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10);
+      noCcerTradeRanges.push([`${rows[noTradeStart].month}-01`, nextMonth]);
+      noTradeStart = null;
+    });
 
     return {
       animationDuration: 500,
-      color: ["#a14f39", "#147d70", "#c66b3d"],
+      color: ["#a14f39", "#147d70", "#b5523b"],
       legend: {
         top: 2,
         left: "center",
         itemWidth: 16,
         itemHeight: 8,
         itemGap: 8,
-        textStyle: { color: "#4e5f5c", fontSize: 10 },
+        textStyle: { color: "#4e5f5c", fontSize: 11 },
       },
-      grid: { left: 62, right: 62, top: 58, bottom: 82 },
+      grid: { left: 62, right: 62, top: 48, bottom: 40 },
       tooltip: {
         trigger: "axis",
         axisPointer: { type: "cross", crossStyle: { color: "#71817e" } },
@@ -1548,22 +1561,21 @@ export default function DashboardClient() {
       },
       dataZoom: [
         {
-          type: "slider",
+          id: "shared-trade-range",
+          type: "inside",
           start: 0,
           end: 100,
-          height: 24,
-          bottom: 18,
-          brushSelect: false,
-          borderColor: "#c7d4d1",
-          fillerColor: "rgba(20,125,112,.16)",
-          handleStyle: { color: "#147d70" },
+          zoomOnMouseWheel: false,
+          moveOnMouseMove: false,
+          moveOnMouseWheel: false,
         },
       ],
       xAxis: {
-        type: "category",
-        data: rows.map((row) => row.month),
+        type: "time",
+        min: rangeStart,
+        max: rangeEnd,
         axisLine: { lineStyle: { color: "#aab9b6" } },
-        axisLabel: { color: "#596966", hideOverlap: true },
+        axisLabel: { color: "#596966", hideOverlap: true, formatter: "{yyyy}-{MM}" },
       },
       yAxis: [
         {
@@ -1588,7 +1600,7 @@ export default function DashboardClient() {
         {
           name: "CCER 月均价",
           type: "line",
-          data: rows.map((row) => row.ccerPrice),
+          data: rows.map((row) => [`${row.month}-01`, row.ccerPrice]),
           showSymbol: true,
           symbolSize: 5,
           smooth: 0.16,
@@ -1596,11 +1608,17 @@ export default function DashboardClient() {
           z: 4,
           lineStyle: { color: "#a14f39", width: 2.2 },
           itemStyle: { color: "#a14f39" },
+          markArea: noCcerTradeRanges.length ? {
+            silent: true,
+            itemStyle: { color: "rgba(89, 105, 102, 0.07)" },
+            label: { show: true, position: "insideTop", color: "#71817e", fontSize: 10, formatter: "无 CCER 成交" },
+            data: noCcerTradeRanges.map(([start, end]) => [{ xAxis: start }, { xAxis: end }]),
+          } : undefined,
         },
         {
           name: "CEA 月均价",
           type: "line",
-          data: rows.map((row) => row.ceaPrice),
+          data: rows.map((row) => [`${row.month}-01`, row.ceaPrice]),
           showSymbol: true,
           symbolSize: 5,
           smooth: 0.16,
@@ -1613,15 +1631,15 @@ export default function DashboardClient() {
           name: "CCER 相对溢价率",
           type: "bar",
           yAxisIndex: 1,
-          barMaxWidth: 18,
+          barMaxWidth: 14,
           z: 2,
-          itemStyle: { color: "#c66b3d" },
+          itemStyle: { color: "#b5523b" },
           data: rows.map((row) => {
             if (row.premiumRate == null) return null;
             const value = Number((row.premiumRate * 100).toFixed(2));
             return {
-              value,
-              itemStyle: { color: value >= 0 ? "#c66b3d" : "#3e7f9b" },
+              value: [`${row.month}-01`, value],
+              itemStyle: { color: value >= 0 ? "#b5523b" : "#2f7d68" },
             };
           }),
         },
@@ -1701,6 +1719,50 @@ export default function DashboardClient() {
         },
       ];
     });
+    const totalLabelSeries = [
+      {
+        id: "count-total-label",
+        name: "项目数量合计",
+        type: "bar" as const,
+        stack: "project-count",
+        yAxisIndex: 0,
+        data: statusSummary.map(() => 0),
+        barMaxWidth: 34,
+        silent: true,
+        tooltip: { show: false },
+        itemStyle: { color: "transparent" },
+        label: {
+          show: true,
+          position: "top" as const,
+          distance: 6,
+          color: "#31403d",
+          fontSize: 11,
+          fontWeight: 700,
+          formatter: (params: { dataIndex?: number }) => exactNumber(statusSummary[Number(params.dataIndex)]?.count || 0, 0),
+        },
+      },
+      {
+        id: "annual-total-label",
+        name: "预计年均减排量合计",
+        type: "bar" as const,
+        stack: "expected-annual",
+        yAxisIndex: 1,
+        data: statusSummary.map(() => 0),
+        barMaxWidth: 34,
+        silent: true,
+        tooltip: { show: false },
+        itemStyle: { color: "transparent" },
+        label: {
+          show: true,
+          position: "top" as const,
+          distance: 6,
+          color: "#31403d",
+          fontSize: 11,
+          fontWeight: 700,
+          formatter: (params: { dataIndex?: number }) => compactNumber(Math.round(statusSummary[Number(params.dataIndex)]?.expectedAnnual || 0), 0),
+        },
+      },
+    ];
     return {
       color: data.methodologies.map((_, index) => methodColor(index)),
       grid: { left: 66, right: 260, top: 28, bottom: 58 },
@@ -1759,7 +1821,7 @@ export default function DashboardClient() {
           axisLabel: { formatter: (value: number) => compactNumber(value, 0), color: "#596966" },
         },
       ],
-      series,
+      series: [...series, ...totalLabelSeries],
     };
   }, [data, statusSummary]);
 
@@ -1820,7 +1882,7 @@ export default function DashboardClient() {
       type: "category",
       inverse: true,
       data: methodCountData.map((row) => row.methodology),
-      axisLabel: { color: "#596966", fontSize: 10, width: 150, overflow: "truncate" },
+      axisLabel: { color: "#596966", fontSize: 12, width: 150, overflow: "truncate" },
       axisLine: { lineStyle: { color: "#aab9b6" } },
     },
     series: [
@@ -1851,7 +1913,7 @@ export default function DashboardClient() {
       type: "category",
       inverse: true,
       data: methodExpectedData.map((row) => row.methodology),
-      axisLabel: { color: "#596966", fontSize: 10, width: 150, overflow: "truncate" },
+      axisLabel: { color: "#596966", fontSize: 12, width: 150, overflow: "truncate" },
       axisLine: { lineStyle: { color: "#aab9b6" } },
     },
     series: [
@@ -1895,7 +1957,7 @@ export default function DashboardClient() {
       type: "category",
       inverse: true,
       data: reductionTotals.map((row) => row.methodology),
-      axisLabel: { color: "#596966", fontSize: 10, width: 150, overflow: "truncate" },
+      axisLabel: { color: "#596966", fontSize: 12, width: 150, overflow: "truncate" },
       axisLine: { lineStyle: { color: "#aab9b6" } },
     },
     series: [{
@@ -1982,7 +2044,7 @@ export default function DashboardClient() {
         gridIndex: 0,
         inverse: true,
         data: reductionComparison.map((row) => row.methodology),
-        axisLabel: { color: "#596966", fontSize: 10, width: 112, overflow: "truncate" },
+        axisLabel: { color: "#596966", fontSize: 12, width: 112, overflow: "truncate" },
         axisLine: { lineStyle: { color: "#aab9b6" } },
       },
       {
@@ -2629,15 +2691,16 @@ export default function DashboardClient() {
             <article className="panel">
               <PanelTitle
                 label="FIGURE 01"
-                title="每日成交量与成交均价"
-                note="拖动底部时间滑块调整区间；悬停查看日期、成交量、成交额和成交均价。"
+                title="CCER每日成交量与成交均价"
+                note="拖动底部时间滑块可同步调整两张图的展示区间；数据按日展示，横轴按月标注。"
               />
               <EChart
                 option={tradeOption}
+                group="trade-time-range"
                 className="trend-chart"
                 ariaLabel="全国CCER每日成交量和成交价格走势图"
                 exportTitle="CCER每日成交量与成交均价"
-                exportFileName="FIGURE-01-每日成交量与成交均价"
+                exportFileName="FIGURE-01-CCER每日成交量与成交均价"
                 exportSections={tradeExportSections}
               />
             </article>
@@ -2645,10 +2708,11 @@ export default function DashboardClient() {
               <PanelTitle
                 label="FIGURE 01B"
                 title="CCER与CEA月成交均价及相对溢价率"
-                note={`月均价按当月总成交额÷总成交量计算；暖色为溢价，冷色为折价。CEA 数据截至 ${data.carbonPriceComparison.ceaDataThrough}。`}
+                note="月均价按当月总成交额÷总成交量计算；溢价率＝CCER月均价÷CEA月均价－1，正值表示溢价、负值表示折价；无成交月份不计算月均价。"
               />
               <EChart
                 option={carbonPriceComparisonOption}
+                group="trade-time-range"
                 className="trend-chart"
                 ariaLabel="CCER与CEA月成交均价及CCER相对CEA溢价率组合图"
                 exportTitle="CCER与CEA月成交均价及相对溢价率"
