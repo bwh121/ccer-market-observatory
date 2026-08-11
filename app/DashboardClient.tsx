@@ -245,6 +245,65 @@ const exactNumber = (value: number, digits = 2) =>
     maximumFractionDigits: digits,
   }).format(value);
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const utcDateMs = (date: string) => Date.parse(`${date}T00:00:00Z`);
+
+const buildCompressedTradeTimeline = (months: CarbonPriceMonth[]) => {
+  const noTradeRanges: Array<{ startIndex: number; endIndex: number }> = [];
+  let startIndex: number | null = null;
+  months.forEach((row, index) => {
+    const hasNoCcerTrade = row.ccerVolume <= 0 || row.ccerPrice == null;
+    if (hasNoCcerTrade && startIndex == null) startIndex = index;
+    if (startIndex == null || (hasNoCcerTrade && index < months.length - 1)) return;
+    noTradeRanges.push({ startIndex, endIndex: hasNoCcerTrade ? index : index - 1 });
+    startIndex = null;
+  });
+
+  const longGap = noTradeRanges.find(({ startIndex: start, endIndex: end }) => end - start + 1 >= 3);
+  if (!longGap) {
+    return {
+      compressDate: utcDateMs,
+      formatAxisMonth: (value: number) => new Date(value).toISOString().slice(0, 7),
+      compressedGap: null,
+    };
+  }
+
+  const gapStartMonth = months[longGap.startIndex].month;
+  const gapEndMonth = months[longGap.endIndex].month;
+  const gapStart = utcDateMs(`${gapStartMonth}-01`);
+  const [endYear, endMonth] = gapEndMonth.split("-").map(Number);
+  const gapEnd = Date.UTC(endYear, endMonth, 1);
+  const targetGapDuration = Math.min(31 * DAY_MS, gapEnd - gapStart);
+  const compressedGapEnd = gapStart + targetGapDuration;
+  const removedDuration = gapEnd - compressedGapEnd;
+
+  const compressTimestamp = (value: number) => {
+    if (value <= gapStart) return value;
+    if (value >= gapEnd) return value - removedDuration;
+    return gapStart + ((value - gapStart) / (gapEnd - gapStart)) * targetGapDuration;
+  };
+
+  const restoreTimestamp = (value: number) => {
+    if (value <= gapStart) return value;
+    if (value >= compressedGapEnd) return value + removedDuration;
+    return gapStart + ((value - gapStart) / targetGapDuration) * (gapEnd - gapStart);
+  };
+
+  return {
+    compressDate: (date: string) => compressTimestamp(utcDateMs(date)),
+    formatAxisMonth: (value: number) => {
+      if (value > gapStart && value < compressedGapEnd) return "";
+      return new Date(restoreTimestamp(value)).toISOString().slice(0, 7);
+    },
+    compressedGap: {
+      start: gapStart,
+      end: compressedGapEnd,
+      label: `${gapStartMonth}至${gapEndMonth}无 CCER 成交`,
+    },
+  };
+};
+
 const MAP_REGISTERED_COLUMNS = [
   "项目业主",
   "审定机构名称",
@@ -1422,10 +1481,16 @@ export default function DashboardClient() {
     });
   };
 
+  const tradeTimeline = useMemo(
+    () => buildCompressedTradeTimeline(data?.carbonPriceComparison.months || []),
+    [data],
+  );
+
   const tradeOption = useMemo<EChartsOption>(() => {
     if (!data) return {};
     const rangeStart = `${data.carbonPriceComparison.months[0]?.month || data.trades[0]?.date.slice(0, 7)}-01`;
     const rangeEnd = data.trades.at(-1)?.date;
+    const rangeStartValue = tradeTimeline.compressDate(rangeStart);
     return {
       animationDuration: 500,
       color: ["#9fc8bf", "#9b4d5b"],
@@ -1460,10 +1525,16 @@ export default function DashboardClient() {
       ],
       xAxis: {
         type: "time",
-        min: rangeStart,
-        max: rangeEnd,
+        min: rangeStartValue,
+        max: rangeEnd ? tradeTimeline.compressDate(rangeEnd) : undefined,
         axisLine: { lineStyle: { color: "#aab9b6" } },
-        axisLabel: { color: "#596966", hideOverlap: true, formatter: "{yyyy}-{MM}" },
+        axisLabel: {
+          color: "#596966",
+          hideOverlap: true,
+          formatter: (value: number) => Math.abs(value - rangeStartValue) <= 45 * DAY_MS
+            ? rangeStart.slice(0, 7)
+            : tradeTimeline.formatAxisMonth(value),
+        },
       },
       yAxis: [
         {
@@ -1485,7 +1556,7 @@ export default function DashboardClient() {
         {
           name: "每日成交量",
           type: "bar",
-          data: data.trades.map((row) => [row.date, row.volume]),
+          data: data.trades.map((row) => [tradeTimeline.compressDate(row.date), row.volume]),
           barMaxWidth: 14,
           itemStyle: { color: "#8fbfb4" },
         },
@@ -1493,7 +1564,7 @@ export default function DashboardClient() {
           name: "成交均价",
           type: "line",
           yAxisIndex: 1,
-          data: data.trades.map((row) => [row.date, row.price]),
+          data: data.trades.map((row) => [tradeTimeline.compressDate(row.date), row.price]),
           showSymbol: false,
           smooth: 0.18,
           lineStyle: { color: "#9b4d5b", width: 2 },
@@ -1502,13 +1573,14 @@ export default function DashboardClient() {
         },
       ],
     };
-  }, [data]);
+  }, [data, tradeTimeline]);
 
   const carbonPriceComparisonOption = useMemo<EChartsOption>(() => {
     if (!data) return {};
     const rows = data.carbonPriceComparison.months;
     const rangeStart = `${rows[0]?.month || data.trades[0]?.date.slice(0, 7)}-01`;
     const rangeEnd = data.trades.at(-1)?.date;
+    const rangeStartValue = tradeTimeline.compressDate(rangeStart);
     const premiumValues = rows
       .map((row) => row.premiumRate == null ? null : Number((row.premiumRate * 100).toFixed(2)))
       .filter((value): value is number => value != null);
@@ -1516,18 +1588,6 @@ export default function DashboardClient() {
     const premiumMax = Math.max(0, ...premiumValues);
     const premiumAxisMin = Math.floor(Math.min(-40, premiumMin * 3) / 10) * 10;
     const premiumAxisMax = Math.ceil(Math.max(80, premiumMax * 3) / 10) * 10;
-    const noCcerTradeRanges: Array<[string, string]> = [];
-    let noTradeStart: number | null = null;
-    rows.forEach((row, index) => {
-      const hasNoTrade = row.ccerVolume <= 0 || row.ccerPrice == null;
-      if (hasNoTrade && noTradeStart == null) noTradeStart = index;
-      if (noTradeStart == null || (hasNoTrade && index < rows.length - 1)) return;
-      const endIndex = hasNoTrade ? index : index - 1;
-      const [year, month] = rows[endIndex].month.split("-").map(Number);
-      const nextMonth = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10);
-      noCcerTradeRanges.push([`${rows[noTradeStart].month}-01`, nextMonth]);
-      noTradeStart = null;
-    });
 
     return {
       animationDuration: 500,
@@ -1572,10 +1632,16 @@ export default function DashboardClient() {
       ],
       xAxis: {
         type: "time",
-        min: rangeStart,
-        max: rangeEnd,
+        min: rangeStartValue,
+        max: rangeEnd ? tradeTimeline.compressDate(rangeEnd) : undefined,
         axisLine: { lineStyle: { color: "#aab9b6" } },
-        axisLabel: { color: "#596966", hideOverlap: true, formatter: "{yyyy}-{MM}" },
+        axisLabel: {
+          color: "#596966",
+          hideOverlap: true,
+          formatter: (value: number) => Math.abs(value - rangeStartValue) <= 45 * DAY_MS
+            ? rangeStart.slice(0, 7)
+            : tradeTimeline.formatAxisMonth(value),
+        },
       },
       yAxis: [
         {
@@ -1600,7 +1666,7 @@ export default function DashboardClient() {
         {
           name: "CCER 月均价",
           type: "line",
-          data: rows.map((row) => [`${row.month}-01`, row.ccerPrice]),
+          data: rows.map((row) => [tradeTimeline.compressDate(`${row.month}-01`), row.ccerPrice]),
           showSymbol: true,
           symbolSize: 5,
           smooth: 0.16,
@@ -1608,17 +1674,20 @@ export default function DashboardClient() {
           z: 4,
           lineStyle: { color: "#a14f39", width: 2.2 },
           itemStyle: { color: "#a14f39" },
-          markArea: noCcerTradeRanges.length ? {
+          markArea: tradeTimeline.compressedGap ? {
             silent: true,
             itemStyle: { color: "rgba(89, 105, 102, 0.07)" },
-            label: { show: true, position: "insideTop", color: "#71817e", fontSize: 10, formatter: "无 CCER 成交" },
-            data: noCcerTradeRanges.map(([start, end]) => [{ xAxis: start }, { xAxis: end }]),
+            label: { show: true, position: "insideTop", color: "#71817e", fontSize: 10, formatter: "无成交" },
+            data: [[{ xAxis: tradeTimeline.compressedGap.start }, { xAxis: tradeTimeline.compressedGap.end }]],
           } : undefined,
         },
         {
           name: "CEA 月均价",
           type: "line",
-          data: rows.map((row) => [`${row.month}-01`, row.ceaPrice]),
+          data: rows.map((row) => ({
+            value: [tradeTimeline.compressDate(`${row.month}-01`), row.ceaPrice],
+            symbolSize: row.ccerPrice == null ? 0 : 5,
+          })),
           showSymbol: true,
           symbolSize: 5,
           smooth: 0.16,
@@ -1638,14 +1707,14 @@ export default function DashboardClient() {
             if (row.premiumRate == null) return null;
             const value = Number((row.premiumRate * 100).toFixed(2));
             return {
-              value: [`${row.month}-01`, value],
+              value: [tradeTimeline.compressDate(`${row.month}-01`), value],
               itemStyle: { color: value >= 0 ? "#b5523b" : "#2f7d68" },
             };
           }),
         },
       ],
     };
-  }, [data]);
+  }, [data, tradeTimeline]);
 
   const statusSummary = useMemo(() => {
     if (!data) return [];
@@ -2690,9 +2759,9 @@ export default function DashboardClient() {
           <div className="two-column-grid trade-chart-grid">
             <article className="panel">
               <PanelTitle
-                label="FIGURE 01"
+                label="FIGURE 01A"
                 title="CCER每日成交量与成交均价"
-                note="拖动底部时间滑块可同步调整两张图的展示区间；数据按日展示，横轴按月标注。"
+                note={`拖动底部时间滑块可同步调整两张图的展示区间；数据按日展示，横轴按月标注。${tradeTimeline.compressedGap ? `${tradeTimeline.compressedGap.label}，横轴按约一个月宽度压缩显示。` : ""}`}
               />
               <EChart
                 option={tradeOption}
@@ -2700,7 +2769,7 @@ export default function DashboardClient() {
                 className="trend-chart"
                 ariaLabel="全国CCER每日成交量和成交价格走势图"
                 exportTitle="CCER每日成交量与成交均价"
-                exportFileName="FIGURE-01-CCER每日成交量与成交均价"
+                exportFileName="FIGURE-01A-CCER每日成交量与成交均价"
                 exportSections={tradeExportSections}
               />
             </article>
@@ -2708,7 +2777,7 @@ export default function DashboardClient() {
               <PanelTitle
                 label="FIGURE 01B"
                 title="CCER与CEA月成交均价及相对溢价率"
-                note="月均价按当月总成交额÷总成交量计算；溢价率＝CCER月均价÷CEA月均价－1，正值表示溢价、负值表示折价；无成交月份不计算月均价。"
+                note={`月均价按当月总成交额÷总成交量计算；溢价率＝CCER月均价÷CEA月均价－1，正值表示溢价、负值表示折价；无成交月份不计算月均价。${tradeTimeline.compressedGap ? `${tradeTimeline.compressedGap.label}，横轴按约一个月宽度压缩显示。` : ""}`}
               />
               <EChart
                 option={carbonPriceComparisonOption}

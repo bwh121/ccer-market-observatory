@@ -189,7 +189,12 @@ test("server-renders the CCER research dashboard shell", async () => {
   assert.match(dashboardSource, /value >= 0 \? "#b5523b" : "#2f7d68"/);
   assert.match(dashboardSource, /溢价率＝CCER月均价÷CEA月均价－1/);
   assert.match(dashboardSource, /无成交月份不计算月均价/);
-  assert.match(dashboardSource, /formatter: "无 CCER 成交"/);
+  assert.match(dashboardSource, /buildCompressedTradeTimeline/);
+  assert.match(dashboardSource, /targetGapDuration = Math\.min\(31 \* DAY_MS/);
+  assert.match(dashboardSource, /tradeTimeline\.compressedGap\.label/);
+  assert.match(dashboardSource, /formatter: "无成交"/);
+  assert.match(dashboardSource, /label="FIGURE 01A"/);
+  assert.doesNotMatch(dashboardSource, /label="FIGURE 01"/);
   assert.equal((dashboardSource.match(/group="trade-time-range"/g) || []).length, 2);
   assert.match(chartSource, /echarts\.connect\(group\)/);
   assert.match(stylesSource, /\.trade-chart-grid\s*\{[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
