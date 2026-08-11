@@ -264,7 +264,7 @@ const buildCompressedTradeTimeline = (months: CarbonPriceMonth[]) => {
   if (!longGap) {
     return {
       compressDate: utcDateMs,
-      formatAxisMonth: (value: number) => new Date(value).toISOString().slice(0, 7),
+      axisMonth: (value: number) => new Date(value).toISOString().slice(0, 7),
       compressedGap: null,
     };
   }
@@ -292,16 +292,35 @@ const buildCompressedTradeTimeline = (months: CarbonPriceMonth[]) => {
 
   return {
     compressDate: (date: string) => compressTimestamp(utcDateMs(date)),
-    formatAxisMonth: (value: number) => {
-      if (value > gapStart && value < compressedGapEnd) return "";
+    axisMonth: (value: number) => {
+      if (value > gapStart && value < compressedGapEnd) return null;
       return new Date(restoreTimestamp(value)).toISOString().slice(0, 7);
     },
     compressedGap: {
       start: gapStart,
       end: compressedGapEnd,
       label: `${gapStartMonth}至${gapEndMonth}无 CCER 成交`,
+      resumeMonth: new Date(gapEnd).toISOString().slice(0, 7),
     },
   };
+};
+
+const formatMonthlyAxisLabel = (
+  value: number,
+  rangeStartValue: number,
+  rangeStartMonth: string,
+  axisMonth: (timestamp: number) => string | null,
+  resumeMonth?: string,
+) => {
+  if (value < rangeStartValue - DAY_MS) return "";
+  const monthKey = Math.abs(value - rangeStartValue) <= 20 * DAY_MS
+    ? rangeStartMonth
+    : axisMonth(value);
+  if (!monthKey) return "";
+  if (monthKey === rangeStartMonth && Math.abs(value - rangeStartValue) > 20 * DAY_MS) return "";
+  const [year, month] = monthKey.split("-");
+  const showYear = monthKey === rangeStartMonth || month === "01" || monthKey === resumeMonth;
+  return `{month|${Number(month)}月}\n{year|${showYear ? year : " "}}`;
 };
 
 const MAP_REGISTERED_COLUMNS = [
@@ -1491,10 +1510,11 @@ export default function DashboardClient() {
     const rangeStart = `${data.carbonPriceComparison.months[0]?.month || data.trades[0]?.date.slice(0, 7)}-01`;
     const rangeEnd = data.trades.at(-1)?.date;
     const rangeStartValue = tradeTimeline.compressDate(rangeStart);
+    const rangeStartMonth = rangeStart.slice(0, 7);
     return {
       animationDuration: 500,
       color: ["#9fc8bf", "#9b4d5b"],
-      grid: { left: 58, right: 66, top: 18, bottom: 62 },
+      grid: { left: 58, right: 66, top: 18, bottom: 76 },
       tooltip: {
         trigger: "axis",
         axisPointer: { type: "cross", crossStyle: { color: "#71817e" } },
@@ -1515,8 +1535,8 @@ export default function DashboardClient() {
           type: "slider",
           start: 0,
           end: 100,
-          height: 20,
-          bottom: 10,
+          height: 18,
+          bottom: 4,
           brushSelect: false,
           borderColor: "#c7d4d1",
           fillerColor: "rgba(20,125,112,.18)",
@@ -1527,13 +1547,26 @@ export default function DashboardClient() {
         type: "time",
         min: rangeStartValue,
         max: rangeEnd ? tradeTimeline.compressDate(rangeEnd) : undefined,
+        splitNumber: 24,
+        minInterval: 28 * DAY_MS,
+        maxInterval: 31 * DAY_MS,
         axisLine: { lineStyle: { color: "#aab9b6" } },
+        axisTick: { show: false },
         axisLabel: {
           color: "#596966",
-          hideOverlap: true,
-          formatter: (value: number) => Math.abs(value - rangeStartValue) <= 45 * DAY_MS
-            ? rangeStart.slice(0, 7)
-            : tradeTimeline.formatAxisMonth(value),
+          hideOverlap: false,
+          margin: 8,
+          formatter: (value: number) => formatMonthlyAxisLabel(
+            value,
+            rangeStartValue,
+            rangeStartMonth,
+            tradeTimeline.axisMonth,
+            tradeTimeline.compressedGap?.resumeMonth,
+          ),
+          rich: {
+            month: { color: "#596966", fontSize: 9, lineHeight: 13 },
+            year: { color: "#31403d", fontSize: 9, fontWeight: 700, lineHeight: 13 },
+          },
         },
       },
       yAxis: [
@@ -1581,13 +1614,18 @@ export default function DashboardClient() {
     const rangeStart = `${rows[0]?.month || data.trades[0]?.date.slice(0, 7)}-01`;
     const rangeEnd = data.trades.at(-1)?.date;
     const rangeStartValue = tradeTimeline.compressDate(rangeStart);
+    const rangeEndValue = rangeEnd ? tradeTimeline.compressDate(rangeEnd) : undefined;
+    const rangeStartMonth = rangeStart.slice(0, 7);
     const premiumValues = rows
       .map((row) => row.premiumRate == null ? null : Number((row.premiumRate * 100).toFixed(2)))
       .filter((value): value is number => value != null);
     const premiumMin = Math.min(0, ...premiumValues);
     const premiumMax = Math.max(0, ...premiumValues);
-    const premiumAxisMin = Math.floor(Math.min(-40, premiumMin * 3) / 10) * 10;
+    const premiumAxisMin = Math.floor(Math.min(-20, premiumMin * 1.5) / 10) * 10;
     const premiumAxisMax = Math.ceil(Math.max(80, premiumMax * 3) / 10) * 10;
+    const priceValues = rows.flatMap((row) => [row.ccerPrice, row.ceaPrice]).filter((value): value is number => value != null);
+    const priceAxisMax = Math.ceil((Math.max(20, ...priceValues) * 1.08) / 20) * 20;
+    const priceAxisMin = priceAxisMax * premiumAxisMin / premiumAxisMax;
 
     return {
       animationDuration: 500,
@@ -1600,7 +1638,7 @@ export default function DashboardClient() {
         itemGap: 8,
         textStyle: { color: "#4e5f5c", fontSize: 11 },
       },
-      grid: { left: 62, right: 62, top: 48, bottom: 40 },
+      grid: { left: 62, right: 62, top: 48, bottom: 48 },
       tooltip: {
         trigger: "axis",
         axisPointer: { type: "cross", crossStyle: { color: "#71817e" } },
@@ -1623,6 +1661,7 @@ export default function DashboardClient() {
         {
           id: "shared-trade-range",
           type: "inside",
+          xAxisIndex: [0, 1],
           start: 0,
           end: 100,
           zoomOnMouseWheel: false,
@@ -1630,27 +1669,63 @@ export default function DashboardClient() {
           moveOnMouseWheel: false,
         },
       ],
-      xAxis: {
-        type: "time",
-        min: rangeStartValue,
-        max: rangeEnd ? tradeTimeline.compressDate(rangeEnd) : undefined,
-        axisLine: { lineStyle: { color: "#aab9b6" } },
-        axisLabel: {
-          color: "#596966",
-          hideOverlap: true,
-          formatter: (value: number) => Math.abs(value - rangeStartValue) <= 45 * DAY_MS
-            ? rangeStart.slice(0, 7)
-            : tradeTimeline.formatAxisMonth(value),
+      xAxis: [
+        {
+          type: "time",
+          min: rangeStartValue,
+          max: rangeEndValue,
+          splitNumber: 24,
+          minInterval: 28 * DAY_MS,
+          maxInterval: 31 * DAY_MS,
+          axisLine: {
+            show: true,
+            onZero: true,
+            onZeroAxisIndex: 0,
+            lineStyle: { color: "#71817e", width: 1.4 },
+          },
+          axisTick: { show: false },
+          axisLabel: { show: false },
         },
-      },
+        {
+          type: "time",
+          min: rangeStartValue,
+          max: rangeEndValue,
+          position: "bottom",
+          splitNumber: 24,
+          minInterval: 28 * DAY_MS,
+          maxInterval: 31 * DAY_MS,
+          axisLine: { show: false },
+          axisTick: { show: false },
+          axisLabel: {
+            color: "#596966",
+            hideOverlap: false,
+            margin: 8,
+            formatter: (value: number) => formatMonthlyAxisLabel(
+              value,
+              rangeStartValue,
+              rangeStartMonth,
+              tradeTimeline.axisMonth,
+              tradeTimeline.compressedGap?.resumeMonth,
+            ),
+            rich: {
+              month: { color: "#596966", fontSize: 9, lineHeight: 13 },
+              year: { color: "#31403d", fontSize: 9, fontWeight: 700, lineHeight: 13 },
+            },
+          },
+        },
+      ],
       yAxis: [
         {
           type: "value",
           name: "价格（元/吨）",
-          min: 0,
+          min: priceAxisMin,
+          max: priceAxisMax,
           nameTextStyle: { color: "#596966" },
           splitLine: { lineStyle: { color: "#e7edeb" } },
-          axisLabel: { color: "#596966" },
+          axisLabel: {
+            color: "#596966",
+            formatter: (value: number) => value < 0 ? "" : exactNumber(value, 0),
+          },
         },
         {
           type: "value",
@@ -2761,7 +2836,6 @@ export default function DashboardClient() {
               <PanelTitle
                 label="FIGURE 01A"
                 title="CCER每日成交量与成交均价"
-                note={`拖动底部时间滑块可同步调整两张图的展示区间；数据按日展示，横轴按月标注。${tradeTimeline.compressedGap ? `${tradeTimeline.compressedGap.label}，横轴按约一个月宽度压缩显示。` : ""}`}
               />
               <EChart
                 option={tradeOption}
@@ -2777,7 +2851,7 @@ export default function DashboardClient() {
               <PanelTitle
                 label="FIGURE 01B"
                 title="CCER与CEA月成交均价及相对溢价率"
-                note={`月均价按当月总成交额÷总成交量计算；溢价率＝CCER月均价÷CEA月均价－1，正值表示溢价、负值表示折价；无成交月份不计算月均价。${tradeTimeline.compressedGap ? `${tradeTimeline.compressedGap.label}，横轴按约一个月宽度压缩显示。` : ""}`}
+                note="月均价按当月总成交额÷总成交量计算；溢价率＝CCER月均价÷CEA月均价－1。"
               />
               <EChart
                 option={carbonPriceComparisonOption}
