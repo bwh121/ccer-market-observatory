@@ -1,6 +1,9 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
-from parse_verification_pdfs import parse_basic_fields, parse_targets
+from parse_verification_pdfs import parse_basic_fields, parse_targets, parse_targets_from_tables
 
 
 SAMPLE_TEXT = """
@@ -69,6 +72,40 @@ class VerificationPdfParserTests(unittest.TestCase):
         self.assertEqual(targets[0]["result"], "符合")
         self.assertEqual(targets[1]["timeliness"], "不及时")
         self.assertEqual(targets[1]["result"], "不符合")
+
+    def test_table_parser_merges_unnumbered_rows_across_pages_and_normalizes_uscc(self):
+        tables = [
+            [["序号", "重点排放单位名称", "统一社会信用代码", "核查及时性"]],
+            [["", "跨页企", "91340100MA", "及时", "符合"]],
+            [["", "业有限公司", "2n09fl3r", "", ""]],
+            [["", "第二企业", "913402007300268946", "及时", "符合"]],
+        ]
+
+        class FakePage:
+            def __init__(self, table):
+                self.table = table
+
+            def extract_tables(self):
+                return [self.table]
+
+        class FakeDocument:
+            pages = [FakePage(table) for table in tables]
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return None
+
+        with TemporaryDirectory() as directory, patch(
+            "parse_verification_pdfs.pdfplumber.open", return_value=FakeDocument()
+        ):
+            targets = parse_targets_from_tables(Path(directory) / "sample.pdf")
+
+        self.assertEqual(len(targets), 2)
+        self.assertEqual(targets[0]["target_entity_name"], "跨页企业有限公司")
+        self.assertEqual(targets[0]["target_uscc"], "91340100MA2N09FL3R")
+        self.assertEqual(targets[1]["target_order"], 2)
 
 
 if __name__ == "__main__":

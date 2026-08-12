@@ -415,9 +415,14 @@ test("guards the automated CETS PDF refresh with a fail-closed publish gate", as
   assert.match(workflow, /cron: "30 12 \* \* 1-5"/);
   assert.match(workflow, /runs-on: \[self-hosted, Windows, X64, cets-collector\]/);
   assert.match(workflow, /CETS_PROFILE_DIR/);
+  assert.match(workflow, /CETS_WORK_DIR/);
+  assert.match(workflow, /--cdp-endpoint http:\/\/127\.0\.0\.1:9223/);
+  assert.match(workflow, /--allow-source-missing-pdf/);
   assert.match(workflow, /--min-coverage 1\.0/);
   assert.match(workflow, /if: failure\(\)/);
-  assert.match(parser, /publish_ready = coverage >= args\.min_coverage/);
+  assert.match(parser, /effective_coverage >= args\.min_coverage/);
+  assert.match(parser, /not remaining_missing_ids/);
+  assert.match(parser, /error_count == 0/);
   assert.match(parser, /missing_list_ids/);
   assert.match(parser, /duplicate_detail_ids/);
   assert.match(crawler, /verification-pdf-manifest\.json/);

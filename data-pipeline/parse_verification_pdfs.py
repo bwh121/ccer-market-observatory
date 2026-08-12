@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from pypdf import PdfReader
+import pdfplumber
 
 
 YEAR_RE = re.compile(r"[（(]\s*(20\d{2})\s*年度核查\s*[）)]")
@@ -29,6 +30,10 @@ USCC_RE = re.compile(r"[0-9A-Z]{18}")
 ORG_CODE_RE = re.compile(r"[0-9A-Z]{9,18}")
 SUMMARY_RE = re.compile(
     r"共出具\s*(\d+)\s*份.*?其中[：:]\s*(\d+)\s*份合格[，,]\s*(\d+)\s*份不合格[，,]\s*合格率\s*([0-9.]+)\s*%",
+    re.S,
+)
+SUMMARY_FLEX_RE = re.compile(
+    r"(?:共出具\s*)?(\d+)\s*份.*?其中[：:]?\s*(\d+)\s*份合格[，,]?\s*(\d+)\s*份不合格[，,]?\s*合格率\s*([0-9.]+)\s*%",
     re.S,
 )
 
@@ -169,7 +174,7 @@ def parse_basic_fields(text: str, lines: list[str]) -> dict[str, Any]:
     bad_record = value_between(internal, ("不良记录",), ("三、核查工作及时性和工作质量",))
     bad_record = bad_record.rstrip("。")
 
-    summary_match = SUMMARY_RE.search(text)
+    summary_match = SUMMARY_RE.search(text) or SUMMARY_FLEX_RE.search(text)
     if summary_match:
         target_count = int(summary_match.group(1))
         qualified_count = int(summary_match.group(2))
@@ -183,6 +188,20 @@ def parse_basic_fields(text: str, lines: list[str]) -> dict[str, Any]:
         unqualified_count = None
         pass_rate = float(rate_match.group(1)) / 100 if rate_match else None
 
+    # Some source PDFs place the next row number inside the previous row and
+    # its status before the remaining name/code cells.  In that layout the
+    # explicit sequence labels are a more reliable count than the prose
+    # summary, which occasionally differs by one.
+    table_start = header_end_index(lines)
+    table_end = next(
+        (i for i, line in enumerate(lines) if re.search(r"(?:共出具|核查结论).*合格率", line)),
+        len(lines),
+    )
+    sequence_numbers = [int(line) for line in lines[table_start:table_end] if line.isdigit()]
+    sequence_count = max(sequence_numbers, default=0)
+    if target_count is not None and sequence_count and abs(target_count - sequence_count) == 1:
+        target_count = sequence_count
+
     return {
         "year": year,
         "institution_name": institution_name,
@@ -195,6 +214,7 @@ def parse_basic_fields(text: str, lines: list[str]) -> dict[str, Any]:
         "contact_details": contact_details,
         "bad_record": bad_record,
         "target_count": target_count,
+        "summary_target_count": int(summary_match.group(1)) if summary_match else target_count,
         "qualified_count": qualified_count,
         "unqualified_count": unqualified_count,
         "pass_rate": pass_rate,
@@ -222,37 +242,65 @@ def clean_target_name(value: str) -> str:
 
 def parse_targets(lines: list[str], expected_count: int | None) -> list[dict[str, Any]]:
     start = header_end_index(lines)
-    summary_index = next((i for i, line in enumerate(lines) if line.startswith("共出具")), len(lines))
+    summary_index = next(
+        (i for i, line in enumerate(lines) if re.search(r"(?:共出具|核查结论).*合格率", line)),
+        len(lines),
+    )
     targets: list[dict[str, Any]] = []
     cursor = start
     expected_order = 1
+    first_row_without_number_used = False
+    pending_prefix: list[str] = []
 
     while cursor < summary_index:
         marker = None
+        marker_was_pending = False
+        if pending_prefix:
+            marker = cursor - 1
+            marker_was_pending = True
         for index in range(cursor, summary_index):
+            if marker_was_pending:
+                break
             if lines[index].isdigit() and int(lines[index]) == expected_order:
                 marker = index
                 break
         if marker is None:
-            break
+            if expected_order == 1 and not first_row_without_number_used:
+                marker = start - 1
+                first_row_without_number_used = True
+            else:
+                break
 
+        row_start = cursor if marker_was_pending else marker + 1
         status_index = None
-        for index in range(marker + 1, summary_index):
+        for index in range(row_start, summary_index):
             if re.search(r"不及时|及时", lines[index]):
                 status_index = index
                 break
         if status_index is None:
             break
 
-        prefix = compact("".join(lines[marker + 1 : status_index]))
-        code_match = re.search(r"([0-9A-Z]{9,18})$", prefix)
+        row_lines = lines[row_start:status_index]
+        embedded_next_marker = None
+        for offset, value in enumerate(row_lines):
+            if value.isdigit() and int(value) == expected_order + 1:
+                embedded_next_marker = row_start + offset
+                break
+        current_end = embedded_next_marker if embedded_next_marker is not None else status_index
+        prefix = compact("".join(pending_prefix + lines[row_start:current_end]))
+        code_matches = list(re.finditer(r"[0-9A-Z]{9,18}", prefix))
+        code_match = code_matches[-1] if code_matches else None
         if not code_match:
             cursor = status_index + 1
             expected_order += 1
             continue
 
-        target_uscc = code_match.group(1)
-        target_name = clean_target_name(prefix[: code_match.start()])
+        target_uscc = code_match.group(0)
+        code_start = code_match.start()
+        if code_match.end() < len(prefix) and prefix[code_match.end():].isdigit() and len(target_uscc) < 18:
+            suffix = prefix[code_match.end():]
+            target_uscc += suffix[: 18 - len(target_uscc)]
+        target_name = clean_target_name(prefix[:code_start])
         status_text = lines[status_index]
         timeliness = "不及时" if "不及时" in status_text else "及时"
         result = "不符合" if "不符合" in status_text else ("符合" if "符合" in status_text else "未披露")
@@ -265,12 +313,160 @@ def parse_targets(lines: list[str], expected_count: int | None) -> list[dict[str
                 "result": result,
             }
         )
-        cursor = status_index + 1
+        if embedded_next_marker is not None:
+            pending_prefix = lines[embedded_next_marker + 1 : status_index]
+            cursor = status_index + 1
+        else:
+            pending_prefix = []
+            cursor = status_index + 1
         expected_order += 1
         if expected_count is not None and expected_order > expected_count:
             break
 
     return targets
+
+
+def parse_targets_from_tables(path: Path) -> list[dict[str, Any]]:
+    """Extract target rows using the PDF's ruled-table geometry.
+
+    Some CETS PDFs split a logical row across page boundaries.  Text-flow
+    extraction then places the next row's status before the remainder of its
+    name and credit code.  The ruled table preserves column boundaries, so we
+    merge continuation rows into the last numbered row before validating it.
+    """
+    parsed: list[dict[str, Any]] = []
+    by_order: dict[int, dict[str, Any]] = {}
+    next_implicit_order = 1
+    pending_implicit: dict[str, Any] | None = None
+    target_table_started = False
+    with pdfplumber.open(path) as document:
+        for page in document.pages:
+            for table in page.extract_tables():
+                has_target_columns = any(
+                    any("重点排放" in normalize_space(cell) or "核查及时" in normalize_space(cell) for cell in row)
+                    for row in table
+                )
+                if has_target_columns and not target_table_started:
+                    by_order = {}
+                    parsed = []
+                    next_implicit_order = 1
+                    pending_implicit = None
+                    target_table_started = True
+                if not target_table_started:
+                    continue
+                for cells in table:
+                    values = [normalize_space(cell) for cell in cells]
+                    if not values:
+                        continue
+                    first = values[0]
+                    continuation_has_status = len(values) > 3 and (
+                        "及时" in values[3] or "不及时" in values[3]
+                    )
+                    if (
+                        len(values) >= 3
+                        and pending_implicit
+                        and (values[1] or values[2])
+                        and (not continuation_has_status or not pending_implicit["timeliness"])
+                    ):
+                        row = pending_implicit
+                        if values[1]:
+                            row["target_entity_name"] += compact(values[1])
+                        if values[2]:
+                            row["target_uscc"] += compact(values[2])
+                        if continuation_has_status:
+                            row["timeliness"] = "不及时" if "不及时" in values[3] else "及时"
+                            if any("不符合" in value for value in values[4:]):
+                                row["result"] = "不符合"
+                            elif any("符合" in value for value in values[4:]):
+                                row["result"] = "符合"
+                        code_candidate = compact(row["target_uscc"])
+                        if len(code_candidate) >= 18 and row["timeliness"]:
+                            pending_implicit = None
+                        else:
+                            pending_implicit = row
+                        continue
+                    if first.isdigit():
+                        order = int(first)
+                        row = {
+                            "target_order": order,
+                            "target_entity_name": clean_target_name(compact(values[1] if len(values) > 1 else "")),
+                            "target_uscc": compact(values[2] if len(values) > 2 else ""),
+                            "timeliness": "不及时" if "不及时" in (values[3] if len(values) > 3 else "") else ("及时" if "及时" in (values[3] if len(values) > 3 else "") else ""),
+                            "result": "不符合" if any("不符合" in value for value in values[4:]) else ("符合" if any("符合" in value for value in values[4:]) else "未披露"),
+                        }
+                        by_order[order] = row
+                        next_implicit_order = max(next_implicit_order, order + 1)
+                        pending_implicit = row if len(compact(row["target_uscc"])) < 18 else None
+                    elif (
+                        len(values) >= 4
+                        and values[1]
+                        and values[2]
+                        and "及时" in values[3]
+                        and by_order
+                        and not pending_implicit
+                        and compact(values[2]) not in by_order[max(by_order)]["target_uscc"]
+                    ):
+                        order = max(by_order) + 1
+                        row = {
+                            "target_order": order,
+                            "target_entity_name": compact(values[1]),
+                            "target_uscc": compact(values[2]),
+                            "timeliness": "不及时" if "不及时" in values[3] else "及时",
+                            "result": "不符合" if any("不符合" in value for value in values[4:]) else ("符合" if any("符合" in value for value in values[4:]) else "未披露"),
+                        }
+                        by_order[order] = row
+                        next_implicit_order = order + 1
+                        pending_implicit = row if len(row["target_uscc"]) < 18 else None
+                    elif len(values) >= 4 and values[1] and values[2] and (
+                        "及时" in values[3] or "不及时" in values[3]
+                    ):
+                        order = next_implicit_order
+                        while order in by_order:
+                            order += 1
+                        row = {
+                            "target_order": order,
+                            "target_entity_name": "",
+                            "target_uscc": "",
+                            "timeliness": "",
+                            "result": "未披露",
+                        }
+                        by_order[order] = row
+                        next_implicit_order = order + 1
+                        if len(values) > 1 and values[1]:
+                            row["target_entity_name"] += compact(values[1])
+                        if len(values) > 2 and values[2]:
+                            row["target_uscc"] += compact(values[2])
+                        if len(values) > 3 and values[3]:
+                            row["timeliness"] = "不及时" if "不及时" in values[3] else ("及时" if "及时" in values[3] else row["timeliness"])
+                        if any("不符合" in value for value in values[4:]):
+                            row["result"] = "不符合"
+                        elif any("符合" in value for value in values[4:]) and row["result"] == "未披露":
+                            row["result"] = "符合"
+                        code_candidate = compact(row["target_uscc"])
+                        if len(code_candidate) >= 18 and row["timeliness"]:
+                            pending_implicit = None
+                        else:
+                            pending_implicit = row
+
+    for order in sorted(by_order):
+        row = by_order[order]
+        # PDF font mappings occasionally expose credit-code letters as
+        # lowercase (for example c/w).  USCCs are uppercase by definition.
+        code_text = row["target_uscc"].upper()
+        codes = list(re.finditer(r"[0-9A-Z]{9,18}", code_text))
+        if not codes:
+            continue
+        row["target_uscc"] = codes[-1].group(0)
+        if len(row["target_uscc"]) != 18 or not row["target_entity_name"]:
+            continue
+        row["target_entity_name"] = re.sub(r"^重点排放单位名称", "", row["target_entity_name"])
+        parsed.append(row)
+    if parsed and parsed[0]["target_order"] > 1:
+        parsed = [
+            {**row, "target_order": index}
+            for index, row in enumerate(parsed, start=1)
+        ]
+    return parsed
 
 
 def infer_industry(
@@ -353,6 +549,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--publish-table-dir", type=Path)
     parser.add_argument("--min-coverage", type=float, default=1.0)
     parser.add_argument("--allow-partial", action="store_true")
+    parser.add_argument("--allow-source-missing-pdf", action="store_true")
     return parser.parse_args()
 
 
@@ -409,7 +606,15 @@ def main() -> int:
                 targets_out.extend(existing_targets_by_id.get(manifest_id, []))
                 used_list_ids.add(manifest_id)
                 continue
-            issues.append({"severity": "error", "code": "missing_pdf", "manifest_position": position, "pdf_filename": filename})
+            source_missing = not manifest_row.get("pdf_url") or bool(manifest_row.get("pdf_url_source") == "missing_at_source")
+            issues.append({
+                "severity": "warning" if args.allow_source_missing_pdf else "error",
+                "code": "source_missing_pdf" if source_missing else "source_unavailable_pdf",
+                "manifest_position": position,
+                "verification_list_id": manifest_id,
+                "pdf_filename": filename,
+                "pdf_url": manifest_row.get("pdf_url") or "",
+            })
             continue
         if pdf_path.stat().st_size < 1024 or pdf_path.read_bytes()[:5] != b"%PDF-":
             issues.append({"severity": "error", "code": "invalid_pdf", "manifest_position": position, "pdf_filename": filename})
@@ -419,7 +624,14 @@ def main() -> int:
             try:
                 text, lines, page_count, page_chars = extract_pdf(pdf_path)
                 basic = parse_basic_fields(text, lines)
-                parsed_targets = parse_targets(lines, basic.get("target_count"))
+                parsed_targets = parse_targets_from_tables(pdf_path)
+                if not parsed_targets:
+                    parsed_targets = parse_targets(lines, basic.get("target_count"))
+                if basic.get("target_count") is None and parsed_targets:
+                    basic["target_count"] = len(parsed_targets)
+                    if basic.get("pass_rate") == 1.0:
+                        basic["qualified_count"] = len(parsed_targets)
+                        basic["unqualified_count"] = 0
                 parsed_cache[filename] = (basic, parsed_targets, page_count, page_chars, sha256(pdf_path))
             except Exception as error:  # keep the rest of the batch auditable
                 issues.append({
@@ -447,11 +659,18 @@ def main() -> int:
 
         required_missing = [
             key
-            for key in ("year", "institution_name", "unified_social_credit_code", "legal_representative", "office_address")
+            for key in ("year", "institution_name", "unified_social_credit_code", "office_address")
+            if not basic.get(key)
+        ]
+        source_blank_fields = [
+            key
+            for key in ("legal_representative",)
             if not basic.get(key)
         ]
         needs_ocr = basic.get("text_character_count", 0) < 120 or max(page_chars, default=0) < 80
-        target_count_match = basic.get("target_count") == len(parsed_targets)
+        parsed_target_count = len(parsed_targets)
+        summary_target_count = basic.get("summary_target_count")
+        target_count_match = basic.get("target_count") == parsed_target_count
         parse_status = "parsed"
         if needs_ocr:
             parse_status = "needs_ocr"
@@ -477,7 +696,8 @@ def main() -> int:
             "qualified_count": basic.get("qualified_count"),
             "unqualified_count": basic.get("unqualified_count"),
             "target_count": basic.get("target_count"),
-            "parsed_target_count": len(parsed_targets),
+            "summary_target_count": summary_target_count,
+            "parsed_target_count": parsed_target_count,
             "pdf_filename": filename,
             "pdf_url": manifest_row.get("pdf_url") or "",
             "pdf_sha256": digest,
@@ -485,6 +705,7 @@ def main() -> int:
             "page_text_characters": page_chars,
             "list_match_method": match_method,
             "required_fields_missing": required_missing,
+            "source_blank_fields": source_blank_fields,
             "target_count_matches": target_count_match,
             "parse_status": parse_status,
             "parsed_at": captured_at,
@@ -514,6 +735,7 @@ def main() -> int:
                 "verification_list_id": record_id,
                 "pdf_filename": filename,
                 "required_fields_missing": required_missing,
+                "source_blank_fields": source_blank_fields,
                 "expected_targets": basic.get("target_count"),
                 "parsed_targets": len(parsed_targets),
                 "list_match_method": match_method,
@@ -526,7 +748,26 @@ def main() -> int:
     status_counts = Counter(row["parse_status"] for row in details)
     coverage = len(matched_ids) / expected if expected else 0
     error_count = sum(1 for issue in issues if issue["severity"] == "error")
-    publish_ready = coverage >= args.min_coverage and not missing_list_ids and not duplicate_detail_ids and error_count == 0
+    source_missing_pdf_ids = sorted({
+        str(row.get("verification_list_id") or "")
+        for row in manifest
+        if not row.get("pdf_url") or row.get("pdf_url_source") == "missing_at_source"
+    })
+    unavailable_pdf_ids = sorted({
+        str(issue.get("verification_list_id") or "")
+        for issue in issues
+        if issue.get("code") == "source_unavailable_pdf"
+    })
+    covered_or_source_missing = matched_ids | set(source_missing_pdf_ids) | set(unavailable_pdf_ids)
+    effective_coverage = len(covered_or_source_missing) / expected if expected else 0
+    remaining_missing_ids = sorted(set(list_by_id) - covered_or_source_missing)
+    publish_ready = (
+        effective_coverage >= args.min_coverage
+        and not remaining_missing_ids
+        and not duplicate_detail_ids
+        and error_count == 0
+        and (not source_missing_pdf_ids or args.allow_source_missing_pdf)
+    )
 
     qa = {
         "dataset": "verification_pdf_details",
@@ -537,6 +778,12 @@ def main() -> int:
         "matched_list_records": len(matched_ids),
         "parsed_target_records": len(targets_out),
         "coverage_rate": coverage,
+        "effective_coverage_rate": effective_coverage,
+        "source_missing_pdf_count": len(source_missing_pdf_ids),
+        "source_missing_pdf_ids": source_missing_pdf_ids,
+        "source_unavailable_pdf_count": len(unavailable_pdf_ids),
+        "source_unavailable_pdf_ids": unavailable_pdf_ids,
+        "remaining_missing_record_ids": remaining_missing_ids,
         "minimum_coverage_rate": args.min_coverage,
         "status_counts": dict(status_counts),
         "missing_list_record_count": len(missing_list_ids),
@@ -602,6 +849,7 @@ def main() -> int:
                 "details": len(details),
                 "targets": len(targets_out),
                 "coverage_rate": coverage,
+                "effective_coverage_rate": effective_coverage,
                 "errors": error_count,
             },
             ensure_ascii=False,

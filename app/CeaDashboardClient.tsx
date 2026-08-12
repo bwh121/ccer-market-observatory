@@ -182,7 +182,14 @@ type CeaDashboardData = {
       parsed: number;
       expected: number;
       targets: number;
+      rawTargets?: number;
+      duplicateRelationshipsRemoved?: number;
       coverageRate?: number;
+      effectiveCoverageRate?: number;
+      sourceMissingPdf?: number;
+      sourceUnavailablePdf?: number;
+      unresolved?: number;
+      errors?: number;
       status: string;
       publishReady?: boolean;
       checkedAt?: string;
@@ -458,7 +465,8 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
     status: "partial",
   };
   const relationshipBadge = `${exactNumber(pdfCoverage.targets)}条核查关系`;
-  const pdfCoverageText = `${exactNumber(pdfCoverage.parsed)}/${exactNumber(pdfCoverage.expected)}份PDF`;
+  const pdfCoverageText = `${exactNumber(pdfCoverage.parsed)}份可用PDF（名单${exactNumber(pdfCoverage.expected)}条）`;
+  const sourcePdfExceptions = `${exactNumber(pdfCoverage.sourceMissingPdf || 0)}条官网未附PDF、${exactNumber(pdfCoverage.sourceUnavailablePdf || 0)}条官方链接失效`;
 
   const loadParticipants = async () => {
     if (participants || participantsLoading) return;
@@ -810,10 +818,15 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
     } else {
       const institution = row as VerificationInstitution;
       const detail = data.participants.verificationDetails.find((item) => item.verification_list_id === institution.id);
+      const missingReason = institution.detailStatus === "官网未附PDF"
+        ? "官网公开列表未附PDF；列表字段已收录，不推测附件内容。"
+        : institution.detailStatus === "官网链接失效"
+          ? "官网公开了PDF地址，但当前官方链接无法访问；列表字段已收录。"
+          : "该条记录的PDF详情尚未通过解析校验；列表字段为全量公开数据。";
       setDrawer({
         eyebrow: "VERIFICATION INSTITUTION",
         title: institution.name,
-        description: detail ? "该条记录的PDF详情已经解析并通过规则校验。" : "该条记录的PDF详情尚未通过解析校验；列表字段为全量公开数据。",
+        description: detail ? "该条记录的PDF详情已经解析并通过规则校验。" : missingReason,
         fields: [
           { label: "数据年度", value: institution.year },
           { label: "注册省市", value: [institution.province, institution.city].filter(Boolean).join(" · ") },
@@ -994,7 +1007,7 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
         </section>
 
         <section id="participants" className="dashboard-section">
-          <SectionHeading index="03" eyebrow="MARKET PARTICIPANTS" title="市场参与方" description={pdfCoverage.publishReady ? `用年度公开名录查询重点排放单位和技术服务机构；机构—企业关系图使用${pdfCoverageText}中已通过校验的数据。` : "用年度公开名录查询重点排放单位和技术服务机构；机构—企业关系图将在PDF全量校验通过后开放。"} />
+          <SectionHeading index="03" eyebrow="MARKET PARTICIPANTS" title="市场参与方" description={pdfCoverage.publishReady ? `用年度公开名录查询重点排放单位和技术服务机构；机构—企业关系图使用${pdfCoverageText}中已通过校验的数据（${sourcePdfExceptions}）。` : "用年度公开名录查询重点排放单位和技术服务机构；机构—企业关系图将在PDF全量校验通过后开放。"} />
 
           <article className="panel cea-participant-panel">
             <PanelTitle label="TABLE 01" title="重点排放单位与核查机构查询" note="企业列表22,358条、机构列表1,325条；完整名录按需加载，避免拖慢首屏。" badge="全量列表" />
@@ -1032,7 +1045,7 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
             )}
           </article>
 
-          <div className="subsection-heading cea-subsection-heading"><span>3.1</span><div><h3>核查服务市场格局</h3><p>{pdfCoverage.publishReady ? `以下图表使用${pdfCoverageText}中提取的${exactNumber(pdfCoverage.targets)}条核查对象关系；更新未通过完整性门槛时会继续保留上一版数据。` : "PDF详情尚未达到全量发布门槛，关系图暂不形成全国性结论；自动更新会在完整性校验通过后开放。"}</p></div></div>
+          <div className="subsection-heading cea-subsection-heading"><span>3.1</span><div><h3>核查服务市场格局</h3><p>{pdfCoverage.publishReady ? `以下图表使用${pdfCoverageText}中提取并去重的${exactNumber(pdfCoverage.targets)}条核查对象关系；${sourcePdfExceptions}不进入关系图，更新未通过完整性门槛时会继续保留上一版数据。` : "PDF详情尚未达到全量发布门槛，关系图暂不形成全国性结论；自动更新会在完整性校验通过后开放。"}</p></div></div>
           <div className="two-column-grid cea-participant-grid">
             <article className="panel">
               <PanelTitle label="FIGURE 12" title="省内机构与省外机构结构" badge={relationshipBadge} controls={auditProvinceOptions.length ? <SelectControl label="被核查单位省份" value={auditProvince} onChange={setAuditProvince} options={auditProvinceOptions} /> : undefined} />
@@ -1060,7 +1073,7 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
             <h2>完整性与限制</h2>
             <p><strong>01</strong>交易日历连续，1,227个预期交易日均有官方返回；价格行情存在9项警告但无错误。</p>
             <p><strong>02</strong>重点排放单位22,358条、核查机构1,325条、履约信息8,555条，均已完成分页核对。</p>
-            <p><strong>03</strong>{pdfCoverage.publishReady ? `核查机构PDF详情已解析${pdfCoverageText}，形成${exactNumber(pdfCoverage.targets)}条机构—企业关系；仅在完整性校验通过后替换线上数据。` : "核查机构PDF详情尚未达到全量发布门槛，机构—企业关系图保持关闭；候选数据不会覆盖线上版本。"}</p>
+            <p><strong>03</strong>{pdfCoverage.publishReady ? `核查机构公开名单已逐条核对：${pdfCoverageText}，${sourcePdfExceptions}，未解释缺口与解析错误均为0；形成${exactNumber(pdfCoverage.targets)}条公开记录—企业关系。` : "核查机构PDF详情尚未达到全量发布门槛，机构—企业关系图保持关闭；候选数据不会覆盖线上版本。"}</p>
             <p><strong>04</strong>换手率总配额采用用户给定分析口径，并非官方最终配额清缴量。</p>
           </article>
           <div className="sources-row">

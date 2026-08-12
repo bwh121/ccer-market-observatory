@@ -52,7 +52,9 @@ const verificationTargets = (verification.targets || []).map((row) => {
   return {
     verificationId: row.verification_list_id,
     year: String(row.year),
-    industry: row.industry || institution?.industry || "",
+    industry: target?.industry && target.industry !== "未披露"
+      ? target.industry
+      : row.industry || institution?.industry || "",
     institutionName: row.institution_name,
     institutionUscc: row.institution_uscc,
     institutionProvince: institution?.province || "",
@@ -67,30 +69,56 @@ const verificationTargets = (verification.targets || []).map((row) => {
     isLocal: Boolean(institution?.province && target?.province && institution.province === target.province),
   };
 });
+const seenRelationships = new Set();
+const analyticalVerificationTargets = verificationTargets.filter((row) => {
+  const key = [row.pdfUrl, row.year, row.institutionUscc, row.targetUscc].join("|");
+  if (seenRelationships.has(key)) return false;
+  seenRelationships.add(key);
+  return true;
+});
 
 const detailIds = new Set((verification.details || []).map((row) => row.verification_list_id));
+const sourceMissingIds = new Set(verification.quality?.source_missing_pdf_ids || []);
+const sourceUnavailableIds = new Set(verification.quality?.source_unavailable_pdf_ids || []);
 participants.verificationInstitutions = (participants.verificationInstitutions || []).map((row) => ({
   ...row,
-  detailStatus: detailIds.has(row.id) ? "PDF已解析" : "待解析",
+  detailStatus: detailIds.has(row.id)
+    ? "PDF已解析"
+    : sourceMissingIds.has(row.id)
+      ? "官网未附PDF"
+      : sourceUnavailableIds.has(row.id)
+        ? "官网链接失效"
+        : "待解析",
 }));
 
 const checkedAt = verification.quality?.checked_at || verification.generated_at || new Date().toISOString();
 dashboard.generatedAt = checkedAt;
 dashboard.participants.verificationDetails = verification.details || [];
-dashboard.participants.verificationTargets = verificationTargets;
+dashboard.participants.verificationTargets = analyticalVerificationTargets;
 dashboard.quality.verificationPdfCoverage = {
   parsed: verification.quality?.matched_list_records ?? verification.details?.length ?? 0,
   expected: verification.quality?.expected_list_records ?? dashboard.participants.verificationRecords,
-  targets: verificationTargets.length,
+  targets: analyticalVerificationTargets.length,
+  rawTargets: verificationTargets.length,
+  duplicateRelationshipsRemoved: verificationTargets.length - analyticalVerificationTargets.length,
   coverageRate: verification.quality?.coverage_rate ?? 0,
+  effectiveCoverageRate: verification.quality?.effective_coverage_rate ?? 0,
+  sourceMissingPdf: verification.quality?.source_missing_pdf_count ?? 0,
+  sourceUnavailablePdf: verification.quality?.source_unavailable_pdf_count ?? 0,
+  unresolved: verification.quality?.remaining_missing_record_ids?.length ?? 0,
+  errors: verification.quality?.error_count ?? 0,
   status: verification.quality?.publish_ready ? "complete" : "partial",
   publishReady: Boolean(verification.quality?.publish_ready),
   checkedAt,
   issueCount: verification.quality?.issue_count ?? 0,
 };
 delete dashboard.definitions.verificationSample;
+const expected = verification.quality?.expected_list_records ?? 0;
+const parsed = verification.quality?.matched_list_records ?? verification.details?.length ?? 0;
+const sourceMissing = verification.quality?.source_missing_pdf_count ?? 0;
+const sourceUnavailable = verification.quality?.source_unavailable_pdf_count ?? 0;
 dashboard.definitions.verificationCoverage = verification.quality?.publish_ready
-  ? `核查机构PDF已按公开列表全量解析并通过完整性校验，共${verificationTargets.length.toLocaleString("zh-CN")}条机构—企业核查关系。`
+  ? `公开列表${expected.toLocaleString("zh-CN")}条已逐条核对：解析${parsed.toLocaleString("zh-CN")}条PDF，官网未附PDF ${sourceMissing.toLocaleString("zh-CN")}条、官方链接失效${sourceUnavailable.toLocaleString("zh-CN")}条，未解释缺口和解析错误均为0；PDF共提取${verificationTargets.length.toLocaleString("zh-CN")}行，按同一附件、年度、机构和企业去重后形成${analyticalVerificationTargets.length.toLocaleString("zh-CN")}条分析关系。`
   : `核查机构PDF当前解析${verification.details?.length || 0}份，未达到全量发布门槛；页面保留上一版通过校验的数据。`;
 
 await Promise.all([
@@ -102,6 +130,7 @@ console.log(JSON.stringify({
   dashboardPath,
   participantsPath,
   details: verification.details?.length || 0,
-  targets: verificationTargets.length,
+  rawTargets: verificationTargets.length,
+  targets: analyticalVerificationTargets.length,
   publishReady: Boolean(verification.quality?.publish_ready),
 }, null, 2));

@@ -4,6 +4,7 @@
 /node_modules
 /data-pipeline/node_modules/
 /data-pipeline/__pycache__/
+/data-pipeline/.vendor/
 *.py[cod]
 /.pnp
 .pnp.*

@@ -1,0 +1,891 @@
+{
+  "dataset": "verification_pdf_details",
+  "checked_at": "2026-08-12T22:15:40.017488+00:00",
+  "manifest_records": 1325,
+  "expected_list_records": 1325,
+  "parsed_detail_records": 1239,
+  "matched_list_records": 1239,
+  "parsed_target_records": 14613,
+  "coverage_rate": 0.9350943396226415,
+  "effective_coverage_rate": 1.0,
+  "source_missing_pdf_count": 80,
+  "source_missing_pdf_ids": [
+    "VER-0328",
+    "VER-0603",
+    "VER-0649",
+    "VER-0650",
+    "VER-0651",
+    "VER-0652",
+    "VER-0653",
+    "VER-0654",
+    "VER-0655",
+    "VER-0656",
+    "VER-0657",
+    "VER-0658",
+    "VER-0659",
+    "VER-0660",
+    "VER-0661",
+    "VER-0662",
+    "VER-0681",
+    "VER-0801",
+    "VER-0802",
+    "VER-0803",
+    "VER-0804",
+    "VER-0805",
+    "VER-0807",
+    "VER-0808",
+    "VER-0809",
+    "VER-0810",
+    "VER-0811",
+    "VER-0812",
+    "VER-0813",
+    "VER-0814",
+    "VER-0815",
+    "VER-0816",
+    "VER-0817",
+    "VER-0818",
+    "VER-0819",
+    "VER-0821",
+    "VER-0822",
+    "VER-0823",
+    "VER-0824",
+    "VER-0825",
+    "VER-0826",
+    "VER-0827",
+    "VER-0828",
+    "VER-0830",
+    "VER-0831",
+    "VER-0832",
+    "VER-0833",
+    "VER-0834",
+    "VER-0835",
+    "VER-0836",
+    "VER-0837",
+    "VER-0838",
+    "VER-0839",
+    "VER-0840",
+    "VER-0841",
+    "VER-0843",
+    "VER-0844",
+    "VER-0845",
+    "VER-0846",
+    "VER-0848",
+    "VER-0849",
+    "VER-0850",
+    "VER-0851",
+    "VER-0852",
+    "VER-0853",
+    "VER-0854",
+    "VER-0855",
+    "VER-0856",
+    "VER-0858",
+    "VER-0860",
+    "VER-0917",
+    "VER-0936",
+    "VER-0959",
+    "VER-0971",
+    "VER-0972",
+    "VER-1014",
+    "VER-1015",
+    "VER-1016",
+    "VER-1017",
+    "VER-1118"
+  ],
+  "source_unavailable_pdf_count": 6,
+  "source_unavailable_pdf_ids": [
+    "VER-0163",
+    "VER-0198",
+    "VER-0200",
+    "VER-0591",
+    "VER-0740",
+    "VER-0799"
+  ],
+  "remaining_missing_record_ids": [],
+  "minimum_coverage_rate": 1.0,
+  "status_counts": {
+    "parsed": 1239
+  },
+  "missing_list_record_count": 86,
+  "missing_list_record_ids": [
+    "VER-0163",
+    "VER-0198",
+    "VER-0200",
+    "VER-0328",
+    "VER-0591",
+    "VER-0603",
+    "VER-0649",
+    "VER-0650",
+    "VER-0651",
+    "VER-0652",
+    "VER-0653",
+    "VER-0654",
+    "VER-0655",
+    "VER-0656",
+    "VER-0657",
+    "VER-0658",
+    "VER-0659",
+    "VER-0660",
+    "VER-0661",
+    "VER-0662",
+    "VER-0681",
+    "VER-0740",
+    "VER-0799",
+    "VER-0801",
+    "VER-0802",
+    "VER-0803",
+    "VER-0804",
+    "VER-0805",
+    "VER-0807",
+    "VER-0808",
+    "VER-0809",
+    "VER-0810",
+    "VER-0811",
+    "VER-0812",
+    "VER-0813",
+    "VER-0814",
+    "VER-0815",
+    "VER-0816",
+    "VER-0817",
+    "VER-0818",
+    "VER-0819",
+    "VER-0821",
+    "VER-0822",
+    "VER-0823",
+    "VER-0824",
+    "VER-0825",
+    "VER-0826",
+    "VER-0827",
+    "VER-0828",
+    "VER-0830",
+    "VER-0831",
+    "VER-0832",
+    "VER-0833",
+    "VER-0834",
+    "VER-0835",
+    "VER-0836",
+    "VER-0837",
+    "VER-0838",
+    "VER-0839",
+    "VER-0840",
+    "VER-0841",
+    "VER-0843",
+    "VER-0844",
+    "VER-0845",
+    "VER-0846",
+    "VER-0848",
+    "VER-0849",
+    "VER-0850",
+    "VER-0851",
+    "VER-0852",
+    "VER-0853",
+    "VER-0854",
+    "VER-0855",
+    "VER-0856",
+    "VER-0858",
+    "VER-0860",
+    "VER-0917",
+    "VER-0936",
+    "VER-0959",
+    "VER-0971",
+    "VER-0972",
+    "VER-1014",
+    "VER-1015",
+    "VER-1016",
+    "VER-1017",
+    "VER-1118"
+  ],
+  "duplicate_detail_ids": [],
+  "issue_count": 86,
+  "error_count": 0,
+  "publish_ready": true,
+  "issues": [
+    {
+      "severity": "warning",
+      "code": "source_unavailable_pdf",
+      "manifest_position": 163,
+      "verification_list_id": "VER-0163",
+      "pdf_filename": "34a223117fdd45f3acd89c8292339c60.pdf",
+      "pdf_url": "https://certificate.cets.org.cn/rkcer/check/2025/12/31/34a223117fdd45f3acd89c8292339c60.pdf"
+    },
+    {
+      "severity": "warning",
+      "code": "source_unavailable_pdf",
+      "manifest_position": 198,
+      "verification_list_id": "VER-0198",
+      "pdf_filename": "3e2939c32054490fafa7bb2c027bf3f3.pdf",
+      "pdf_url": "https://certificate.cets.org.cn/rkcer/check/2025/12/31/3e2939c32054490fafa7bb2c027bf3f3.pdf"
+    },
+    {
+      "severity": "warning",
+      "code": "source_unavailable_pdf",
+      "manifest_position": 200,
+      "verification_list_id": "VER-0200",
+      "pdf_filename": "456c50e9de9b417cb92f096d6d946f99.pdf",
+      "pdf_url": "https://certificate.cets.org.cn/rkcer/check/2025/12/31/456c50e9de9b417cb92f096d6d946f99.pdf"
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 328,
+      "verification_list_id": "VER-0328",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_unavailable_pdf",
+      "manifest_position": 591,
+      "verification_list_id": "VER-0591",
+      "pdf_filename": "32940fa3fe324e1d8e4256d681ed23de.pdf",
+      "pdf_url": "https://certificate.cets.org.cn/rkcer/check/2025/12/24/32940fa3fe324e1d8e4256d681ed23de.pdf"
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 603,
+      "verification_list_id": "VER-0603",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 649,
+      "verification_list_id": "VER-0649",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 650,
+      "verification_list_id": "VER-0650",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 651,
+      "verification_list_id": "VER-0651",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 652,
+      "verification_list_id": "VER-0652",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 653,
+      "verification_list_id": "VER-0653",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 654,
+      "verification_list_id": "VER-0654",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 655,
+      "verification_list_id": "VER-0655",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 656,
+      "verification_list_id": "VER-0656",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 657,
+      "verification_list_id": "VER-0657",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 658,
+      "verification_list_id": "VER-0658",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 659,
+      "verification_list_id": "VER-0659",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 660,
+      "verification_list_id": "VER-0660",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 661,
+      "verification_list_id": "VER-0661",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 662,
+      "verification_list_id": "VER-0662",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 681,
+      "verification_list_id": "VER-0681",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_unavailable_pdf",
+      "manifest_position": 740,
+      "verification_list_id": "VER-0740",
+      "pdf_filename": "f2bd78e5eaa443d9accf79828bad266d.pdf",
+      "pdf_url": "https://certificate.cets.org.cn/rkcer/check/2025/12/22/f2bd78e5eaa443d9accf79828bad266d.pdf"
+    },
+    {
+      "severity": "warning",
+      "code": "source_unavailable_pdf",
+      "manifest_position": 799,
+      "verification_list_id": "VER-0799",
+      "pdf_filename": "de33c9eeb8ba4fa98eb163b20f47bd42.pdf",
+      "pdf_url": "https://certificate.cets.org.cn/rkcer/check/2025/12/16/de33c9eeb8ba4fa98eb163b20f47bd42.pdf"
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 801,
+      "verification_list_id": "VER-0801",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 802,
+      "verification_list_id": "VER-0802",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 803,
+      "verification_list_id": "VER-0803",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 804,
+      "verification_list_id": "VER-0804",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 805,
+      "verification_list_id": "VER-0805",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 807,
+      "verification_list_id": "VER-0807",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 808,
+      "verification_list_id": "VER-0808",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 809,
+      "verification_list_id": "VER-0809",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 810,
+      "verification_list_id": "VER-0810",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 811,
+      "verification_list_id": "VER-0811",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 812,
+      "verification_list_id": "VER-0812",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 813,
+      "verification_list_id": "VER-0813",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 814,
+      "verification_list_id": "VER-0814",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 815,
+      "verification_list_id": "VER-0815",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 816,
+      "verification_list_id": "VER-0816",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 817,
+      "verification_list_id": "VER-0817",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 818,
+      "verification_list_id": "VER-0818",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 819,
+      "verification_list_id": "VER-0819",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 821,
+      "verification_list_id": "VER-0821",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 822,
+      "verification_list_id": "VER-0822",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 823,
+      "verification_list_id": "VER-0823",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 824,
+      "verification_list_id": "VER-0824",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 825,
+      "verification_list_id": "VER-0825",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 826,
+      "verification_list_id": "VER-0826",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 827,
+      "verification_list_id": "VER-0827",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 828,
+      "verification_list_id": "VER-0828",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 830,
+      "verification_list_id": "VER-0830",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 831,
+      "verification_list_id": "VER-0831",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 832,
+      "verification_list_id": "VER-0832",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 833,
+      "verification_list_id": "VER-0833",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 834,
+      "verification_list_id": "VER-0834",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 835,
+      "verification_list_id": "VER-0835",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 836,
+      "verification_list_id": "VER-0836",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 837,
+      "verification_list_id": "VER-0837",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 838,
+      "verification_list_id": "VER-0838",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 839,
+      "verification_list_id": "VER-0839",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 840,
+      "verification_list_id": "VER-0840",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 841,
+      "verification_list_id": "VER-0841",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 843,
+      "verification_list_id": "VER-0843",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 844,
+      "verification_list_id": "VER-0844",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 845,
+      "verification_list_id": "VER-0845",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 846,
+      "verification_list_id": "VER-0846",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 848,
+      "verification_list_id": "VER-0848",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 849,
+      "verification_list_id": "VER-0849",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 850,
+      "verification_list_id": "VER-0850",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 851,
+      "verification_list_id": "VER-0851",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 852,
+      "verification_list_id": "VER-0852",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 853,
+      "verification_list_id": "VER-0853",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 854,
+      "verification_list_id": "VER-0854",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 855,
+      "verification_list_id": "VER-0855",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 856,
+      "verification_list_id": "VER-0856",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 858,
+      "verification_list_id": "VER-0858",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 860,
+      "verification_list_id": "VER-0860",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 917,
+      "verification_list_id": "VER-0917",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 936,
+      "verification_list_id": "VER-0936",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 959,
+      "verification_list_id": "VER-0959",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 971,
+      "verification_list_id": "VER-0971",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 972,
+      "verification_list_id": "VER-0972",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 1014,
+      "verification_list_id": "VER-1014",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 1015,
+      "verification_list_id": "VER-1015",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 1016,
+      "verification_list_id": "VER-1016",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 1017,
+      "verification_list_id": "VER-1017",
+      "pdf_filename": "",
+      "pdf_url": ""
+    },
+    {
+      "severity": "warning",
+      "code": "source_missing_pdf",
+      "manifest_position": 1118,
+      "verification_list_id": "VER-1118",
+      "pdf_filename": "",
+      "pdf_url": ""
+    }
+  ]
+}
