@@ -617,7 +617,11 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
   const heatRows = selectedDaily.filter((row) => row.date.startsWith(heatYear));
   const heatOption = useMemo<EChartsOption>(() => ({
     animation: false,
-    tooltip: { formatter: (params: any) => `${params.data?.[0] || ""}<br/>成交量：${exactNumber(Number(params.data?.[1]) || 0)} 吨` },
+    tooltip: { formatter: (params) => {
+      const item = Array.isArray(params) ? params[0] : params;
+      const values = Array.isArray(item?.data) ? item.data : [];
+      return `${String(values[0] || "")}<br/>成交量：${exactNumber(Number(values[1]) || 0)} 吨`;
+    } },
     visualMap: { min: 0, max: Math.max(...heatRows.map((row) => row.totalVolume), 1), calculable: true, orient: "horizontal", left: "center", bottom: 0, inRange: { color: ["#edf3f0", "#8bb9ad", "#147d70", "#9b4d5b"] }, textStyle: axisLabel },
     calendar: { top: 34, left: 42, right: 28, range: heatYear, cellSize: ["auto", 18], itemStyle: { borderWidth: 2, borderColor: "#f3f5f1" }, yearLabel: { show: false }, monthLabel: { color: "#40524e" }, dayLabel: { color: "#596966", firstDay: 1 } },
     series: [{ type: "heatmap", coordinateSystem: "calendar", data: heatRows.map((row) => [row.date, row.totalVolume]) }],
@@ -641,7 +645,7 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
 
   const methodStructureOption = useMemo<EChartsOption>(() => ({
     animation: false,
-    tooltip: { trigger: "item", valueFormatter: (value: any) => `${exactNumber(Number(value) || 0)} 吨` },
+    tooltip: { trigger: "item", valueFormatter: (value: unknown) => `${exactNumber(Number(value) || 0)} 吨` },
     legend: { bottom: 2, textStyle: axisLabel },
     series: [{ type: "pie", radius: ["42%", "68%"], center: ["50%", "45%"], data: methodStructure.map((row) => ({ name: row.shortName, value: row.volume, itemStyle: { color: METHOD_COLORS[row.code] } })), label: { formatter: "{b}\n{d}%", fontSize: 10 } }],
   }), [methodStructure]);
@@ -652,12 +656,12 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
     grid: { left: 54, right: 22, top: 30, bottom: 52 },
     xAxis: { type: "category", data: methodStructure.map((row) => row.shortName), axisLine, axisLabel: { ...axisLabel, interval: 0 } },
     yAxis: { type: "value", name: "元/吨", scale: true, axisLine, axisLabel, splitLine },
-    series: [{ type: "bar", data: methodStructure.map((row) => ({ value: row.averagePrice, itemStyle: { color: METHOD_COLORS[row.code] } })), label: { show: true, position: "top", formatter: (params: any) => params.value == null ? "—" : Number(params.value).toFixed(2) } }],
+    series: [{ type: "bar", data: methodStructure.map((row) => ({ value: row.averagePrice, itemStyle: { color: METHOD_COLORS[row.code] } })), label: { show: true, position: "top", formatter: (params: { value?: unknown }) => params.value == null ? "—" : Number(params.value).toFixed(2) } }],
   }), [methodStructure]);
 
   const subjectStructureOption = useMemo<EChartsOption>(() => ({
     animation: false,
-    tooltip: { trigger: "item", valueFormatter: (value: any) => `${exactNumber(Number(value) || 0)} 吨` },
+    tooltip: { trigger: "item", valueFormatter: (value: unknown) => `${exactNumber(Number(value) || 0)} 吨` },
     legend: { bottom: 2, type: "scroll", textStyle: axisLabel },
     series: [{ type: "pie", radius: ["34%", "65%"], center: ["50%", "44%"], roseType: "radius", data: subjectStructure.map((row) => ({ name: row.subject, value: row.volume, itemStyle: { color: SUBJECT_COLORS[row.subject] } })), label: { formatter: "{b}\n{d}%", fontSize: 10 } }],
   }), [subjectStructure]);
@@ -683,7 +687,10 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
   const coverageRows = data.coverage.provinceYear.filter((row) => row.year === coverageYear);
   const coverageMapOption = useMemo<EChartsOption>(() => ({
     animation: false,
-    tooltip: { trigger: "item", formatter: (params: any) => `${params.name || ""}<br/>公开记录：${exactNumber(Number(params.value) || 0)} 条<br/><small>点击查看企业</small>` },
+    tooltip: { trigger: "item", formatter: (params) => {
+      const item = Array.isArray(params) ? params[0] : params;
+      return `${item?.name || ""}<br/>公开记录：${exactNumber(Number(item?.value) || 0)} 条<br/><small>点击查看企业</small>`;
+    } },
     visualMap: { min: 0, max: Math.max(...coverageRows.map((row) => row.records), 1), left: 8, bottom: 8, calculable: true, text: ["多", "少"], inRange: { color: ["#edf3f0", "#9cc4ba", "#147d70", "#0b514b"] }, textStyle: axisLabel },
     series: [{ name: "重点排放单位", type: "map", map: "china-cea", roam: false, selectedMode: false, data: coverageRows.map((row) => ({ name: provinceMapName(row.province), value: row.records })), itemStyle: { borderColor: "#f3f5f1", borderWidth: 1 }, emphasis: { label: { color: "#14211f" }, itemStyle: { areaColor: "#d6a35d" } } }],
   }), [coverageRows]);
@@ -725,11 +732,17 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
     ], label: { formatter: "{b}\n{c} 条 · {d}%" } }],
   }), [auditRows]);
 
-  const institutionRows = data.participants.verificationTargets.filter((row) => row.institutionName === auditInstitution);
-  const institutionProvinceCounts = [...new Set(institutionRows.map((row) => row.targetProvince))].map((province) => ({
-    province,
-    count: institutionRows.filter((row) => row.targetProvince === province).length,
-  }));
+  const institutionProvinceCounts = useMemo(() => {
+    const institutionRows = data.participants.verificationTargets.filter((row) => row.institutionName === auditInstitution);
+    return [...new Set(institutionRows.map((row) => row.targetProvince))].map((province) => ({
+      province,
+      count: institutionRows.filter((row) => row.targetProvince === province).length,
+    }));
+  }, [auditInstitution, data.participants.verificationTargets]);
+  const institutionRows = useMemo(
+    () => data.participants.verificationTargets.filter((row) => row.institutionName === auditInstitution),
+    [auditInstitution, data.participants.verificationTargets],
+  );
   const institutionFootprintOption = useMemo<EChartsOption>(() => ({
     animation: false,
     tooltip: { trigger: "item" },

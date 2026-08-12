@@ -12,10 +12,9 @@ const readMarket = (): Market => {
 };
 
 export default function MarketShell() {
-  const [market, setMarket] = useState<Market>("ccer");
+  const [market, setMarket] = useState<Market>(() => readMarket());
 
   useEffect(() => {
-    setMarket(readMarket());
     const handlePopState = () => setMarket(readMarket());
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
