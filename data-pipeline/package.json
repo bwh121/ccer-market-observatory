@@ -1,0 +1,12 @@
+{
+  "name": "cea-market-data-pipeline",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "crawl:cets": "node update-cets-verification.mjs",
+    "sync:cets": "node sync-verification-dashboard.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.62.1"
+  }
+}

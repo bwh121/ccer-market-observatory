@@ -1,10 +1,10 @@
-import DashboardClient from "./DashboardClient";
+import MarketShell from "./MarketShell";
 import { ExportAccessProvider } from "./components/ExportAccess";
 
 export default function Home() {
   return (
     <ExportAccessProvider>
-      <DashboardClient />
+      <MarketShell />
     </ExportAccessProvider>
   );
 }

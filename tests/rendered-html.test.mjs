@@ -344,3 +344,83 @@ test("ships a complete and internally consistent dashboard dataset", async () =>
   const authorQr = await stat(new URL("../public/wechat-author-qr.png", import.meta.url));
   assert.ok(authorQr.size > 50_000);
 });
+
+test("adds a separate CEA view without replacing the CCER dashboard", async () => {
+  const marketShellSource = await readFile(new URL("../app/MarketShell.tsx", import.meta.url), "utf8");
+  const ceaSource = await readFile(new URL("../app/CeaDashboardClient.tsx", import.meta.url), "utf8");
+  const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const pagesEntrySource = await readFile(new URL("../github-pages/main.tsx", import.meta.url), "utf8");
+
+  assert.match(marketShellSource, /自愿碳市场/);
+  assert.match(marketShellSource, /强制碳市场/);
+  assert.match(marketShellSource, /market === "cea" \? <CeaDashboardClient \/> : <DashboardClient \/>/);
+  assert.match(pageSource, /<MarketShell \/>/);
+  assert.match(pagesEntrySource, /<MarketShell \/>/);
+  assert.match(ceaSource, /覆盖范围/);
+  assert.match(ceaSource, /市场交易/);
+  assert.match(ceaSource, /市场参与方/);
+  assert.match(ceaSource, /CEA日K线与分交易方式成交量/);
+  assert.match(ceaSource, /年度市场换手率/);
+  assert.match(ceaSource, /CEA—CCER月度价格比较/);
+  assert.match(ceaSource, /省内机构与省外机构结构/);
+  assert.match(ceaSource, /技术服务机构—重点排放单位桑基图/);
+  assert.match(ceaSource, /relationshipBadge/);
+});
+
+test("ships a reconciled CEA dashboard snapshot and complete participant lists", async () => {
+  const payload = JSON.parse(await readFile(new URL("../public/data/cea-dashboard.json", import.meta.url), "utf8"));
+  const participants = JSON.parse(await readFile(new URL("../public/data/cea-participants.json", import.meta.url), "utf8"));
+
+  assert.equal(payload.tradeDataThrough, "2026-08-07");
+  assert.equal(payload.priceComparisonDataThrough, "2026-08-10");
+  assert.equal(payload.daily.length, 4769);
+  assert.equal(payload.participants.keyEmitterRecords, 22358);
+  assert.equal(payload.participants.verificationRecords, 1325);
+  assert.equal(payload.participants.fulfillmentRecords, 8555);
+  assert.equal(participants.keyEmitters.length, payload.participants.keyEmitterRecords);
+  assert.equal(participants.verificationInstitutions.length, payload.participants.verificationRecords);
+  assert.equal(participants.fulfillment.length, payload.participants.fulfillmentRecords);
+  assert.equal(payload.quality.verificationPdfCoverage.parsed, payload.participants.verificationDetails.length);
+  assert.equal(payload.quality.verificationPdfCoverage.targets, payload.participants.verificationTargets.length);
+  assert.ok(payload.quality.verificationPdfCoverage.parsed <= payload.quality.verificationPdfCoverage.expected);
+  if (!payload.quality.verificationPdfCoverage.publishReady) {
+    assert.equal(payload.participants.verificationDetails.length, 0);
+    assert.equal(payload.participants.verificationTargets.length, 0);
+  }
+
+  assert.equal(payload.officialCoverage.managedEntities, 3378);
+  assert.equal(
+    payload.officialCoverage.sectorCounts.reduce((total, row) => total + row.count, 0),
+    payload.officialCoverage.managedEntities,
+  );
+  assert.deepEqual(payload.officialCoverage.gases, ["二氧化碳（CO₂）", "四氟化碳（CF₄）", "六氟化二碳（C₂F₆）"]);
+  assert.deepEqual(payload.quotaBasis.map((row) => row.allowance), [8e9, 4.5e9, 4.5e9, 5e9, 5e9, 7e9]);
+  assert.ok(payload.turnoverByYear.every((row) => Math.abs(row.turnoverRate - row.volume / row.allowance) < 1e-8));
+
+  for (const row of payload.priceComparison.filter((item) => item.ceaPrice && item.ccerPrice)) {
+    assert.ok(Math.abs(row.spreadRatio - (row.ceaPrice / row.ccerPrice - 1)) < 1e-7);
+  }
+
+  const latestCoverage = payload.coverage.yearStats.find((row) => row.year === "2026");
+  assert.equal(latestCoverage.records, 3910);
+  assert.ok(latestCoverage.uniqueEntities > 3800);
+});
+
+test("guards the automated CETS PDF refresh with a fail-closed publish gate", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/update-cets-verification.yml", import.meta.url), "utf8");
+  const parser = await readFile(new URL("../data-pipeline/parse_verification_pdfs.py", import.meta.url), "utf8");
+  const crawler = await readFile(new URL("../data-pipeline/update-cets-verification.mjs", import.meta.url), "utf8");
+  const sync = await readFile(new URL("../data-pipeline/sync-verification-dashboard.mjs", import.meta.url), "utf8");
+
+  assert.match(workflow, /cron: "30 12 \* \* 1-5"/);
+  assert.match(workflow, /runs-on: \[self-hosted, Windows, X64, cets-collector\]/);
+  assert.match(workflow, /CETS_PROFILE_DIR/);
+  assert.match(workflow, /--min-coverage 1\.0/);
+  assert.match(workflow, /if: failure\(\)/);
+  assert.match(parser, /publish_ready = coverage >= args\.min_coverage/);
+  assert.match(parser, /missing_list_ids/);
+  assert.match(parser, /duplicate_detail_ids/);
+  assert.match(crawler, /verification-pdf-manifest\.json/);
+  assert.match(crawler, /CETS public-information page did not become available/);
+  assert.match(sync, /did not pass the publish-ready quality gate/);
+});
