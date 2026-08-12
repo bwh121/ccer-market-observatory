@@ -422,6 +422,9 @@ test("guards the automated CETS PDF refresh with a fail-closed publish gate", as
   assert.match(workflow, /if: failure\(\)/);
   assert.match(workflow, /github\.rest\.git\.createBlob/);
   assert.match(workflow, /github\.rest\.git\.updateRef/);
+  assert.match(workflow, /github\.rest\.git\.getTree/);
+  assert.match(workflow, /CETS_SOURCE_DIR/);
+  assert.match(workflow, /github\.rest\.actions\.createWorkflowDispatch/);
   assert.match(parser, /effective_coverage >= args\.min_coverage/);
   assert.match(parser, /not remaining_missing_ids/);
   assert.match(parser, /error_count == 0/);
