@@ -12,8 +12,11 @@ const readArg = (name, fallback = "") => {
 };
 const hasArg = (name) => process.argv.includes(name);
 
-const workDir = path.resolve(readArg("--work-dir", path.join(siteDir, "work", "cets-verification")));
-const existingPath = path.resolve(
+const resolveSitePath = (value) => (path.isAbsolute(value) ? value : path.resolve(siteDir, value));
+const workDir = resolveSitePath(
+  readArg("--work-dir", path.join(siteDir, "work", "cets-verification")),
+);
+const existingPath = resolveSitePath(
   readArg("--existing", path.join(siteDir, "public", "data", "cea-verification.json")),
 );
 const channel = readArg("--channel", process.env.CETS_BROWSER_CHANNEL || "");
