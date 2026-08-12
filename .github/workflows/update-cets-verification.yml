@@ -1,6 +1,12 @@
 name: Update CETS verification PDFs
 
 on:
+  # Temporary smoke-test trigger. Removed after the end-to-end production
+  # refresh succeeds; the permanent automation remains schedule + manual.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/update-cets-verification.yml"
   schedule:
     # 20:30 Asia/Shanghai, Monday through Friday.
     - cron: "30 12 * * 1-5"
