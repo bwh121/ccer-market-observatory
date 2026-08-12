@@ -24,6 +24,11 @@ jobs:
     timeout-minutes: 90
     env:
       CETS_PROFILE_DIR: ${{ vars.CETS_PROFILE_DIR }}
+    defaults:
+      run:
+        # Windows PowerShell is present on the collector; PowerShell Core is
+        # not. Bypass applies only to each generated workflow script process.
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File {0}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,13 +48,11 @@ jobs:
       # it avoids changing the host's PowerShell execution policy merely so
       # setup-python can run its downloaded installer script.
       - name: Verify local Python
-        shell: pwsh
         run: |
           python --version
           python -c "import sys; assert sys.version_info >= (3, 12), sys.version"
 
       - name: Install crawler and parser dependencies
-        shell: pwsh
         run: |
           pnpm --dir data-pipeline install --frozen-lockfile
           $edgeCandidates = @(
@@ -62,7 +65,6 @@ jobs:
           python -m pip install -r data-pipeline/requirements.txt
 
       - name: Collect complete public list and PDF links
-        shell: pwsh
         run: |
           if (-not $env:CETS_PROFILE_DIR) {
             throw "Repository variable CETS_PROFILE_DIR is required on the cets-collector runner"
@@ -75,7 +77,6 @@ jobs:
             --challenge-timeout-ms 120000
 
       - name: Parse PDFs and apply publish gate
-        shell: pwsh
         run: |
           $existingArgs = @()
           if (Test-Path public/data/cea-verification.json) {
@@ -98,14 +99,12 @@ jobs:
         run: python -m unittest discover -s data-pipeline -p "test_*.py" -v
 
       - name: Install site dependencies
-        shell: pwsh
         run: |
           pnpm install --frozen-lockfile --ignore-scripts
           pnpm approve-builds --all
           pnpm rebuild
 
       - name: Validate site
-        shell: pwsh
         run: |
           pnpm run lint
           pnpm exec tsc --noEmit
@@ -114,7 +113,6 @@ jobs:
 
       - name: Commit validated data changes
         id: commit
-        shell: pwsh
         run: |
           git diff --quiet -- public/data
           if ($LASTEXITCODE -eq 0) {
