@@ -420,6 +420,8 @@ test("guards the automated CETS PDF refresh with a fail-closed publish gate", as
   assert.match(workflow, /--allow-source-missing-pdf/);
   assert.match(workflow, /--min-coverage 1\.0/);
   assert.match(workflow, /if: failure\(\)/);
+  assert.match(workflow, /github\.rest\.git\.createBlob/);
+  assert.match(workflow, /github\.rest\.git\.updateRef/);
   assert.match(parser, /effective_coverage >= args\.min_coverage/);
   assert.match(parser, /not remaining_missing_ids/);
   assert.match(parser, /error_count == 0/);
