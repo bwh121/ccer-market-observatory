@@ -39,18 +39,26 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-          cache: pip
-          cache-dependency-path: data-pipeline/requirements.txt
+      # The dedicated Windows collector already has Python installed. Reusing
+      # it avoids changing the host's PowerShell execution policy merely so
+      # setup-python can run its downloaded installer script.
+      - name: Verify local Python
+        shell: pwsh
+        run: |
+          python --version
+          python -c "import sys; assert sys.version_info >= (3, 12), sys.version"
 
       - name: Install crawler and parser dependencies
         shell: pwsh
         run: |
           pnpm --dir data-pipeline install --frozen-lockfile
-          pnpm --dir data-pipeline exec playwright install msedge
+          $edgeCandidates = @(
+            "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
+            "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
+          )
+          if (-not ($edgeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1)) {
+            throw "Microsoft Edge is required on the cets-collector runner"
+          }
           python -m pip install -r data-pipeline/requirements.txt
 
       - name: Collect complete public list and PDF links
