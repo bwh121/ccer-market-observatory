@@ -422,6 +422,8 @@ test("guards the automated CETS PDF refresh with a fail-closed publish gate", as
   assert.match(workflow, /--min-coverage 1\.0/);
   assert.match(workflow, /if: failure\(\)/);
   assert.doesNotMatch(workflow, /^\s+uses:/m);
+  assert.match(workflow, /git clone --depth 1 --filter=blob:none --no-checkout/);
+  assert.match(workflow, /Summarize diagnostics/);
   assert.match(workflow, /github_actions_cets\.py publish/);
   assert.match(workflow, /CETS_SOURCE_DIR/);
   assert.match(publisher, /"git\/blobs"/);

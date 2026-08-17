@@ -28,6 +28,7 @@ jobs:
       CETS_PROFILE_DIR: ${{ vars.CETS_PROFILE_DIR }}
       CETS_WORK_DIR: ${{ vars.CETS_WORK_DIR || 'C:\actions-runner-ccer\cets-work' }}
       CETS_SOURCE_DIR: C:\a\cets-src-${{ github.run_id }}
+      CETS_RUN_MARKER: ${{ vars.CETS_WORK_DIR || 'C:\actions-runner-ccer\cets-work' }}\.run-${{ github.run_id }}.start
       NODE_OPTIONS: --use-system-ca
     defaults:
       run:
@@ -45,6 +46,8 @@ jobs:
             throw "Refusing to prepare source outside $allowedRoot"
           }
           New-Item -ItemType Directory -Force -Path $sourceDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $env:CETS_WORK_DIR | Out-Null
+          Set-Content -LiteralPath $env:CETS_RUN_MARKER -Value $env:GITHUB_RUN_ID -Encoding Ascii
 
           $toolNode = Get-ChildItem -Path 'C:\actions-runner-ccer\_work\_tool\node\24.*\x64\node.exe' -File -ErrorAction SilentlyContinue |
             Sort-Object FullName -Descending |
@@ -61,29 +64,13 @@ jobs:
           $nodeDir | Out-File -FilePath $env:GITHUB_PATH -Append
           & $node --version
 
-      - name: Download source snapshot through GitHub API
+      - name: Download source snapshot through GitHub SSH
         working-directory: C:\actions-runner-ccer
         run: |
-          $headers = @{
-            Accept = 'application/vnd.github+json'
-            Authorization = "Bearer $env:GITHUB_TOKEN"
-            'User-Agent' = 'ccer-cets-verification-workflow'
-            'X-GitHub-Api-Version' = '2022-11-28'
-          }
-          $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY"
-          $commit = Invoke-RestMethod -Uri "$api/commits/$env:GITHUB_SHA" -Headers $headers -TimeoutSec 60
-          $tree = Invoke-RestMethod -Uri "$api/git/trees/$($commit.commit.tree.sha)?recursive=true" -Headers $headers -TimeoutSec 60
-          if ($tree.truncated) {
-            throw "GitHub source tree was truncated"
-          }
-          $files = @($tree.tree | Where-Object { $_.type -eq 'blob' -and $_.path })
-          foreach ($item in $files) {
-            $blob = Invoke-RestMethod -Uri "$api/git/blobs/$($item.sha)" -Headers $headers -TimeoutSec 60
-            $destination = Join-Path $env:CETS_SOURCE_DIR ($item.path -replace '/', '\')
-            New-Item -ItemType Directory -Force -Path (Split-Path $destination) | Out-Null
-            [System.IO.File]::WriteAllBytes($destination, [Convert]::FromBase64String(($blob.content -replace '\s', '')))
-          }
-          Write-Output "Materialized $($files.Count) source files for $env:GITHUB_SHA."
+          git clone --depth 1 --filter=blob:none --no-checkout "git@github.com:$env:GITHUB_REPOSITORY.git" $env:CETS_SOURCE_DIR
+          if ($LASTEXITCODE -ne 0) { throw "GitHub SSH clone failed" }
+          git -C $env:CETS_SOURCE_DIR checkout --detach $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw "Failed to check out $env:GITHUB_SHA" }
 
       - name: Set up pnpm
         run: |
@@ -210,47 +197,54 @@ jobs:
       - name: Close prior update alert after success
         if: success()
         run: |
+          function Decode-Utf8([string]$value) { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($value)) }
           $headers = @{ Accept = 'application/vnd.github+json'; Authorization = "Bearer $env:GITHUB_TOKEN"; 'User-Agent' = 'ccer-cets-verification-workflow'; 'X-GitHub-Api-Version' = '2022-11-28' }
           $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY"
-          $title = '[数据更新] CETS 核查机构自动更新失败'
+          $title = Decode-Utf8 'W+aVsOaNruabtOaWsF0gQ0VUUyDmoLjmn6XmnLrmnoToh6rliqjmm7TmlrDlpLHotKU='
           $issues = Invoke-RestMethod -Uri "$api/issues?state=open&per_page=100" -Headers $headers -TimeoutSec 60
           foreach ($issue in @($issues | Where-Object { $_.title -eq $title })) {
-            $comment = @{ body = "自动更新已于 $([DateTime]::UtcNow.ToString('o')) 恢复并通过完整性校验。" } | ConvertTo-Json
+            $body = (Decode-Utf8 '6Ieq5Yqo5pu05paw5bey5LqOIA==') + [DateTime]::UtcNow.ToString('o') + (Decode-Utf8 'IOaBouWkjeW5tumAmui/h+WujOaVtOaAp+agoemqjOOAgg==')
+            $comment = @{ body = $body } | ConvertTo-Json
             Invoke-RestMethod -Method Post -Uri "$api/issues/$($issue.number)/comments" -Headers $headers -Body $comment -ContentType 'application/json' -TimeoutSec 60 | Out-Null
             $close = @{ state = 'closed' } | ConvertTo-Json
             Invoke-RestMethod -Method Patch -Uri "$api/issues/$($issue.number)" -Headers $headers -Body $close -ContentType 'application/json' -TimeoutSec 60 | Out-Null
           }
 
-      - name: Upload diagnostics
+      - name: Summarize diagnostics
         if: failure()
-        continue-on-error: true
         working-directory: C:\actions-runner-ccer
         run: |
-          $actionRoot = 'C:\actions-runner-ccer\action-cache\upload-artifact-v4'
-          $expectedSha = 'ea165f8d65b6e75b540449e92b4886f43607fa02'
-          if (-not (Test-Path (Join-Path $actionRoot 'dist\upload\index.js'))) {
-            New-Item -ItemType Directory -Force -Path (Split-Path $actionRoot) | Out-Null
-            git clone --depth 1 --branch v4 git@github.com:actions/upload-artifact.git $actionRoot
-          }
-          $actualSha = git -C $actionRoot rev-parse HEAD
-          if ($actualSha -ne $expectedSha) { throw "Unexpected upload-artifact commit: $actualSha" }
           $workDir = $env:CETS_WORK_DIR
-          [Environment]::SetEnvironmentVariable('INPUT_NAME', "cets-verification-diagnostics-$env:GITHUB_RUN_ID", 'Process')
-          [Environment]::SetEnvironmentVariable('INPUT_PATH', @("$workDir\verification-list.json", "$workDir\verification-pdf-manifest.json", "$workDir\parsed\verification-pdf-quality.json") -join "`n", 'Process')
-          [Environment]::SetEnvironmentVariable('INPUT_IF-NO-FILES-FOUND', 'ignore', 'Process')
-          [Environment]::SetEnvironmentVariable('INPUT_RETENTION-DAYS', '14', 'Process')
-          [Environment]::SetEnvironmentVariable('INPUT_COMPRESSION-LEVEL', '6', 'Process')
-          [Environment]::SetEnvironmentVariable('INPUT_OVERWRITE', 'false', 'Process')
-          [Environment]::SetEnvironmentVariable('INPUT_INCLUDE-HIDDEN-FILES', 'false', 'Process')
-          node "$actionRoot\dist\upload\index.js"
+          $runStarted = (Get-Item -LiteralPath $env:CETS_RUN_MARKER).LastWriteTimeUtc
+          foreach ($path in @("$workDir\verification-list.json", "$workDir\verification-pdf-manifest.json", "$workDir\parsed\verification-pdf-quality.json")) {
+            if ((Test-Path $path) -and (Get-Item -LiteralPath $path).LastWriteTimeUtc -ge $runStarted) {
+              $content = Get-Content -LiteralPath $path -Raw
+              "## $([IO.Path]::GetFileName($path))" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+              '```json' | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+              $content.Substring(0, [Math]::Min(12000, $content.Length)) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+              '```' | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+            }
+          }
 
       - name: Create or update failure alert
         if: failure()
         run: |
+          function Decode-Utf8([string]$value) { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($value)) }
           $headers = @{ Accept = 'application/vnd.github+json'; Authorization = "Bearer $env:GITHUB_TOKEN"; 'User-Agent' = 'ccer-cets-verification-workflow'; 'X-GitHub-Api-Version' = '2022-11-28' }
           $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY"
-          $title = '[数据更新] CETS 核查机构自动更新失败'
-          $body = @("自动更新在 $([DateTime]::UtcNow.ToString('o')) 未通过。", '', '为避免把不完整数据发布到线上，本次运行没有覆盖上一版数据。', "运行记录：https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID") -join "`n"
+          $title = Decode-Utf8 'W+aVsOaNruabtOaWsF0gQ0VUUyDmoLjmn6XmnLrmnoToh6rliqjmm7TmlrDlpLHotKU='
+          $body = @(
+            (Decode-Utf8 '6Ieq5Yqo5pu05paw5ZyoIA==') + [DateTime]::UtcNow.ToString('o') + (Decode-Utf8 'IOacqumAmui/h+OAgg==')
+            ''
+            (Decode-Utf8 '5Li66YG/5YWN5oqK5LiN5a6M5pW05pWw5o2u5Y+R5biD5Yiw57q/5LiK77yM5pys5qyh6L+Q6KGM5rKh5pyJ6KaG55uW5LiK5LiA54mI5pWw5o2u44CC')
+            (Decode-Utf8 '6L+Q6KGM6K6w5b2V77ya') + "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          ) -join "`n"
+          $qualityPath = Join-Path $env:CETS_WORK_DIR 'parsed\verification-pdf-quality.json'
+          $runStarted = (Get-Item -LiteralPath $env:CETS_RUN_MARKER).LastWriteTimeUtc
+          if ((Test-Path $qualityPath) -and (Get-Item -LiteralPath $qualityPath).LastWriteTimeUtc -ge $runStarted) {
+            $quality = Get-Content -LiteralPath $qualityPath -Raw
+            $body += "`n`n" + '```json' + "`n" + $quality.Substring(0, [Math]::Min(12000, $quality.Length)) + "`n" + '```'
+          }
           $issues = Invoke-RestMethod -Uri "$api/issues?state=open&per_page=100" -Headers $headers -TimeoutSec 60
           $existing = @($issues | Where-Object { $_.title -eq $title }) | Select-Object -First 1
           if ($existing) {
@@ -279,3 +273,4 @@ jobs:
             throw "Refusing to remove source outside $allowedRoot"
           }
           Remove-Item -LiteralPath $sourceDir -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath $env:CETS_RUN_MARKER -Force -ErrorAction SilentlyContinue
