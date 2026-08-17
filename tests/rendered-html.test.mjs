@@ -411,6 +411,7 @@ test("guards the automated CETS PDF refresh with a fail-closed publish gate", as
   const parser = await readFile(new URL("../data-pipeline/parse_verification_pdfs.py", import.meta.url), "utf8");
   const crawler = await readFile(new URL("../data-pipeline/update-cets-verification.mjs", import.meta.url), "utf8");
   const sync = await readFile(new URL("../data-pipeline/sync-verification-dashboard.mjs", import.meta.url), "utf8");
+  const publisher = await readFile(new URL("../data-pipeline/github_actions_cets.py", import.meta.url), "utf8");
 
   assert.match(workflow, /cron: "30 12 \* \* 1-5"/);
   assert.match(workflow, /runs-on: \[self-hosted, Windows, X64, cets-collector\]/);
@@ -420,11 +421,13 @@ test("guards the automated CETS PDF refresh with a fail-closed publish gate", as
   assert.match(workflow, /--allow-source-missing-pdf/);
   assert.match(workflow, /--min-coverage 1\.0/);
   assert.match(workflow, /if: failure\(\)/);
-  assert.match(workflow, /github\.rest\.git\.createBlob/);
-  assert.match(workflow, /github\.rest\.git\.updateRef/);
-  assert.match(workflow, /github\.rest\.git\.getTree/);
+  assert.doesNotMatch(workflow, /^\s+uses:/m);
+  assert.match(workflow, /github_actions_cets\.py publish/);
   assert.match(workflow, /CETS_SOURCE_DIR/);
-  assert.match(workflow, /github\.rest\.actions\.createWorkflowDispatch/);
+  assert.match(publisher, /"git\/blobs"/);
+  assert.match(publisher, /"git\/trees"/);
+  assert.match(publisher, /"git\/refs\/heads\/main"/);
+  assert.match(publisher, /actions\/workflows\/deploy-pages\.yml\/dispatches/);
   assert.match(parser, /effective_coverage >= args\.min_coverage/);
   assert.match(parser, /not remaining_missing_ids/);
   assert.match(parser, /error_count == 0/);

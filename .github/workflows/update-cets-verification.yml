@@ -24,6 +24,7 @@ jobs:
     runs-on: [self-hosted, Windows, X64, cets-collector]
     timeout-minutes: 90
     env:
+      GITHUB_TOKEN: ${{ github.token }}
       CETS_PROFILE_DIR: ${{ vars.CETS_PROFILE_DIR }}
       CETS_WORK_DIR: ${{ vars.CETS_WORK_DIR || 'C:\actions-runner-ccer\cets-work' }}
       CETS_SOURCE_DIR: C:\a\cets-src-${{ github.run_id }}
@@ -45,48 +46,58 @@ jobs:
           }
           New-Item -ItemType Directory -Force -Path $sourceDir | Out-Null
 
+          $toolNode = Get-ChildItem -Path 'C:\actions-runner-ccer\_work\_tool\node\24.*\x64\node.exe' -File -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if ($toolNode) {
+            $nodeDir = $toolNode.DirectoryName
+          } else {
+            $nodeDir = 'C:\actions-runner-ccer\externals\node24\bin'
+          }
+          $node = Join-Path $nodeDir 'node.exe'
+          if (-not (Test-Path $node)) {
+            throw "Node 24 was not found on the dedicated runner"
+          }
+          $nodeDir | Out-File -FilePath $env:GITHUB_PATH -Append
+          & $node --version
+
       - name: Download source snapshot through GitHub API
-        uses: actions/github-script@v7
-        with:
-          retries: 3
-          script: |
-            const fs = require("fs");
-            const path = require("path");
-            const root = process.env.CETS_SOURCE_DIR;
-            const { data: commit } = await github.rest.repos.getCommit({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              ref: context.sha,
-            });
-            const { data: tree } = await github.rest.git.getTree({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tree_sha: commit.commit.tree.sha,
-              recursive: "true",
-            });
-            if (tree.truncated) throw new Error("GitHub source tree was truncated");
-            const files = tree.tree.filter((item) => item.type === "blob" && item.path);
-            for (const item of files) {
-              const { data: blob } = await github.rest.git.getBlob({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                file_sha: item.sha,
-              });
-              const destination = path.join(root, ...item.path.split("/"));
-              fs.mkdirSync(path.dirname(destination), { recursive: true });
-              fs.writeFileSync(destination, Buffer.from(blob.content.replace(/\n/g, ""), "base64"));
-            }
-            core.info(`Materialized ${files.length} source files for ${context.sha}.`);
+        working-directory: C:\actions-runner-ccer
+        run: |
+          $headers = @{
+            Accept = 'application/vnd.github+json'
+            Authorization = "Bearer $env:GITHUB_TOKEN"
+            'User-Agent' = 'ccer-cets-verification-workflow'
+            'X-GitHub-Api-Version' = '2022-11-28'
+          }
+          $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY"
+          $commit = Invoke-RestMethod -Uri "$api/commits/$env:GITHUB_SHA" -Headers $headers -TimeoutSec 60
+          $tree = Invoke-RestMethod -Uri "$api/git/trees/$($commit.commit.tree.sha)?recursive=true" -Headers $headers -TimeoutSec 60
+          if ($tree.truncated) {
+            throw "GitHub source tree was truncated"
+          }
+          $files = @($tree.tree | Where-Object { $_.type -eq 'blob' -and $_.path })
+          foreach ($item in $files) {
+            $blob = Invoke-RestMethod -Uri "$api/git/blobs/$($item.sha)" -Headers $headers -TimeoutSec 60
+            $destination = Join-Path $env:CETS_SOURCE_DIR ($item.path -replace '/', '\')
+            New-Item -ItemType Directory -Force -Path (Split-Path $destination) | Out-Null
+            [System.IO.File]::WriteAllBytes($destination, [Convert]::FromBase64String(($blob.content -replace '\s', '')))
+          }
+          Write-Output "Materialized $($files.Count) source files for $env:GITHUB_SHA."
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.7.0
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
+        run: |
+          $nodeDir = Split-Path (Get-Command node.exe).Source
+          $corepack = Join-Path $nodeDir 'corepack.cmd'
+          if (-not (Test-Path $corepack)) {
+            throw "Corepack was not found beside the runner's Node 24 installation"
+          }
+          & $corepack prepare pnpm@11.7.0 --activate
+          & $corepack pnpm --version
+          $shims = Join-Path $nodeDir 'node_modules\corepack\shims'
+          if (Test-Path $shims) {
+            $shims | Out-File -FilePath $env:GITHUB_PATH -Append
+          }
 
       # The dedicated Windows collector already has Python installed. Reusing
       # it avoids changing the host's PowerShell execution policy merely so
@@ -194,179 +205,61 @@ jobs:
 
       - name: Commit validated data changes
         id: commit
-        uses: actions/github-script@v7
-        with:
-          retries: 3
-          script: |
-            const fs = require("fs");
-            const path = require("path");
-            const root = process.env.CETS_SOURCE_DIR;
-            const candidatePaths = [
-              "public/data/cea-dashboard.json",
-              "public/data/cea-participants.json",
-              "public/data/cea-verification.json",
-              "public/data/exports/verification-details.csv",
-              "public/data/exports/verification-pdf-quality.json",
-              "public/data/exports/verification-targets.csv",
-            ];
-            const changedPaths = [];
-            for (const filePath of candidatePaths) {
-              const localContent = fs.readFileSync(path.join(root, ...filePath.split("/")));
-              const localSha = require("crypto").createHash("sha1")
-                .update(Buffer.concat([Buffer.from(`blob ${localContent.length}\0`), localContent]))
-                .digest("hex");
-              const { data: remoteFile } = await github.rest.repos.getContent({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                path: filePath,
-                ref: "main",
-              });
-              if (Array.isArray(remoteFile) || remoteFile.type !== "file") {
-                throw new Error(`Expected a file at ${filePath}`);
-              }
-              if (remoteFile.sha !== localSha) changedPaths.push(filePath);
-            }
-            if (changedPaths.length === 0) {
-              core.setOutput("changed", "false");
-              return;
-            }
-
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const blobs = [];
-            for (const filePath of changedPaths) {
-              const content = fs.readFileSync(path.join(root, ...filePath.split("/"))).toString("base64");
-              const { data: blob } = await github.rest.git.createBlob({
-                owner,
-                repo,
-                content,
-                encoding: "base64",
-              });
-              blobs.push({ path: filePath, mode: "100644", type: "blob", sha: blob.sha });
-            }
-
-            for (let attempt = 1; attempt <= 3; attempt += 1) {
-              const { data: branchRef } = await github.rest.git.getRef({
-                owner,
-                repo,
-                ref: "heads/main",
-              });
-              const parentSha = branchRef.object.sha;
-              const { data: parentCommit } = await github.rest.git.getCommit({
-                owner,
-                repo,
-                commit_sha: parentSha,
-              });
-              const { data: tree } = await github.rest.git.createTree({
-                owner,
-                repo,
-                base_tree: parentCommit.tree.sha,
-                tree: blobs,
-              });
-              const { data: commit } = await github.rest.git.createCommit({
-                owner,
-                repo,
-                message: "data: refresh CETS verification PDFs",
-                tree: tree.sha,
-                parents: [parentSha],
-              });
-              try {
-                await github.rest.git.updateRef({
-                  owner,
-                  repo,
-                  ref: "heads/main",
-                  sha: commit.sha,
-                  force: false,
-                });
-                await github.rest.actions.createWorkflowDispatch({
-                  owner,
-                  repo,
-                  workflow_id: "deploy-pages.yml",
-                  ref: "main",
-                });
-                core.setOutput("changed", "true");
-                core.info(`Published ${changedPaths.length} validated data files in ${commit.sha} and dispatched production deployment.`);
-                return;
-              } catch (error) {
-                const retryableRace = error.status === 409 || error.status === 422;
-                if (!retryableRace || attempt === 3) throw error;
-                core.warning(`main advanced during publish; rebuilding the data commit (attempt ${attempt + 1}/3).`);
-              }
-            }
+        run: python data-pipeline/github_actions_cets.py publish --root .
 
       - name: Close prior update alert after success
         if: success()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const title = "[数据更新] CETS 核查机构自动更新失败";
-            const { data } = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: "open",
-              per_page: 100,
-            });
-            for (const issue of data.filter((item) => item.title === title)) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                body: `自动更新已于 ${new Date().toISOString()} 恢复并通过完整性校验。`,
-              });
-              await github.rest.issues.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                state: "closed",
-              });
-            }
+        run: |
+          $headers = @{ Accept = 'application/vnd.github+json'; Authorization = "Bearer $env:GITHUB_TOKEN"; 'User-Agent' = 'ccer-cets-verification-workflow'; 'X-GitHub-Api-Version' = '2022-11-28' }
+          $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY"
+          $title = '[数据更新] CETS 核查机构自动更新失败'
+          $issues = Invoke-RestMethod -Uri "$api/issues?state=open&per_page=100" -Headers $headers -TimeoutSec 60
+          foreach ($issue in @($issues | Where-Object { $_.title -eq $title })) {
+            $comment = @{ body = "自动更新已于 $([DateTime]::UtcNow.ToString('o')) 恢复并通过完整性校验。" } | ConvertTo-Json
+            Invoke-RestMethod -Method Post -Uri "$api/issues/$($issue.number)/comments" -Headers $headers -Body $comment -ContentType 'application/json' -TimeoutSec 60 | Out-Null
+            $close = @{ state = 'closed' } | ConvertTo-Json
+            Invoke-RestMethod -Method Patch -Uri "$api/issues/$($issue.number)" -Headers $headers -Body $close -ContentType 'application/json' -TimeoutSec 60 | Out-Null
+          }
 
       - name: Upload diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cets-verification-diagnostics-${{ github.run_id }}
-          path: |
-            ${{ vars.CETS_WORK_DIR || 'C:\actions-runner-ccer\cets-work' }}\verification-list.json
-            ${{ vars.CETS_WORK_DIR || 'C:\actions-runner-ccer\cets-work' }}\verification-pdf-manifest.json
-            ${{ vars.CETS_WORK_DIR || 'C:\actions-runner-ccer\cets-work' }}\parsed\verification-pdf-quality.json
-          if-no-files-found: ignore
-          retention-days: 14
+        continue-on-error: true
+        working-directory: C:\actions-runner-ccer
+        run: |
+          $actionRoot = 'C:\actions-runner-ccer\action-cache\upload-artifact-v4'
+          $expectedSha = 'ea165f8d65b6e75b540449e92b4886f43607fa02'
+          if (-not (Test-Path (Join-Path $actionRoot 'dist\upload\index.js'))) {
+            New-Item -ItemType Directory -Force -Path (Split-Path $actionRoot) | Out-Null
+            git clone --depth 1 --branch v4 git@github.com:actions/upload-artifact.git $actionRoot
+          }
+          $actualSha = git -C $actionRoot rev-parse HEAD
+          if ($actualSha -ne $expectedSha) { throw "Unexpected upload-artifact commit: $actualSha" }
+          $workDir = $env:CETS_WORK_DIR
+          [Environment]::SetEnvironmentVariable('INPUT_NAME', "cets-verification-diagnostics-$env:GITHUB_RUN_ID", 'Process')
+          [Environment]::SetEnvironmentVariable('INPUT_PATH', @("$workDir\verification-list.json", "$workDir\verification-pdf-manifest.json", "$workDir\parsed\verification-pdf-quality.json") -join "`n", 'Process')
+          [Environment]::SetEnvironmentVariable('INPUT_IF-NO-FILES-FOUND', 'ignore', 'Process')
+          [Environment]::SetEnvironmentVariable('INPUT_RETENTION-DAYS', '14', 'Process')
+          [Environment]::SetEnvironmentVariable('INPUT_COMPRESSION-LEVEL', '6', 'Process')
+          [Environment]::SetEnvironmentVariable('INPUT_OVERWRITE', 'false', 'Process')
+          [Environment]::SetEnvironmentVariable('INPUT_INCLUDE-HIDDEN-FILES', 'false', 'Process')
+          node "$actionRoot\dist\upload\index.js"
 
       - name: Create or update failure alert
         if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const title = "[数据更新] CETS 核查机构自动更新失败";
-            const body = [
-              `自动更新在 ${new Date().toISOString()} 未通过。`,
-              "",
-              "为避免把不完整数据发布到线上，本次运行没有覆盖上一版数据。",
-              `运行记录：${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-            ].join("\n");
-            const { data } = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: "open",
-              per_page: 100,
-            });
-            const existing = data.find((item) => item.title === title);
-            if (existing) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: existing.number,
-                body,
-              });
-            } else {
-              await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title,
-                body,
-              });
-            }
+        run: |
+          $headers = @{ Accept = 'application/vnd.github+json'; Authorization = "Bearer $env:GITHUB_TOKEN"; 'User-Agent' = 'ccer-cets-verification-workflow'; 'X-GitHub-Api-Version' = '2022-11-28' }
+          $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY"
+          $title = '[数据更新] CETS 核查机构自动更新失败'
+          $body = @("自动更新在 $([DateTime]::UtcNow.ToString('o')) 未通过。", '', '为避免把不完整数据发布到线上，本次运行没有覆盖上一版数据。', "运行记录：https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID") -join "`n"
+          $issues = Invoke-RestMethod -Uri "$api/issues?state=open&per_page=100" -Headers $headers -TimeoutSec 60
+          $existing = @($issues | Where-Object { $_.title -eq $title }) | Select-Object -First 1
+          if ($existing) {
+            $payload = @{ body = $body } | ConvertTo-Json
+            Invoke-RestMethod -Method Post -Uri "$api/issues/$($existing.number)/comments" -Headers $headers -Body $payload -ContentType 'application/json' -TimeoutSec 60 | Out-Null
+          } else {
+            $payload = @{ title = $title; body = $body } | ConvertTo-Json
+            Invoke-RestMethod -Method Post -Uri "$api/issues" -Headers $headers -Body $payload -ContentType 'application/json' -TimeoutSec 60 | Out-Null
+          }
 
       - name: Close dedicated Edge collector
         if: always()
