@@ -420,7 +420,11 @@ test("guards the automated CETS PDF refresh with a fail-closed publish gate", as
   assert.match(workflow, /--cdp-endpoint http:\/\/127\.0\.0\.1:9223/);
   assert.match(workflow, /--allow-source-missing-pdf/);
   assert.match(workflow, /--min-coverage 1\.0/);
-  assert.match(workflow, /if: failure\(\)/);
+  assert.equal(
+    workflow.match(/if: \$\{\{ failure\(\) \|\| cancelled\(\) \}\}/g)?.length,
+    2,
+    "diagnostics and alerts must also run after a cancelled refresh",
+  );
   assert.doesNotMatch(workflow, /^\s+uses:/m);
   assert.match(workflow, /git clone --depth 1 --filter=blob:none --no-checkout/);
   assert.match(workflow, /Summarize diagnostics/);
