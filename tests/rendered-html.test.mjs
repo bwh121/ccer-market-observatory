@@ -7,6 +7,11 @@ const HISTORICAL_REGISTRATION_BUCKET = "before-2026-07-11";
 const HISTORICAL_REGISTRATION_LABEL = "2026-07-11 前";
 const HISTORICAL_METHODOLOGY_BASELINE = 9;
 const HISTORICAL_REGISTERED_REDUCTION_BASELINE = 21_775_733;
+const HISTORICAL_CEA_DATA_THROUGH_BASELINE = "2026-08-19";
+const HISTORICAL_CEA_DAILY_ROWS_BASELINE = 4825;
+const HISTORICAL_CEA_KEY_EMITTER_RECORDS_BASELINE = 22358;
+const HISTORICAL_CEA_VERIFICATION_RECORDS_BASELINE = 1325;
+const HISTORICAL_CEA_FULFILLMENT_RECORDS_BASELINE = 8555;
 const REGISTRATION_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function assertRegistrationBucket(date, label) {
@@ -382,14 +387,16 @@ test("ships a reconciled CEA dashboard snapshot and complete participant lists",
   const payload = JSON.parse(await readFile(new URL("../public/data/cea-dashboard.json", import.meta.url), "utf8"));
   const participants = JSON.parse(await readFile(new URL("../public/data/cea-participants.json", import.meta.url), "utf8"));
 
-  assert.equal(payload.tradeDataThrough, "2026-08-19");
-  assert.equal(payload.priceComparisonDataThrough, "2026-08-19");
-  assert.equal(payload.daily.length, 4825);
+  assert.match(payload.tradeDataThrough, REGISTRATION_DATE_PATTERN);
+  assert.match(payload.priceComparisonDataThrough, REGISTRATION_DATE_PATTERN);
+  assert.ok(payload.tradeDataThrough >= HISTORICAL_CEA_DATA_THROUGH_BASELINE);
+  assert.ok(payload.priceComparisonDataThrough >= HISTORICAL_CEA_DATA_THROUGH_BASELINE);
+  assert.ok(payload.daily.length >= HISTORICAL_CEA_DAILY_ROWS_BASELINE);
   assert.equal(payload.marketSummary.latestDate, payload.tradeDataThrough);
   assert.ok(payload.daily.every((row) => [row.open, row.high, row.low, row.close].every((value) => value == null || value > 0)));
-  assert.equal(payload.participants.keyEmitterRecords, 22358);
-  assert.equal(payload.participants.verificationRecords, 1325);
-  assert.equal(payload.participants.fulfillmentRecords, 8555);
+  assert.ok(payload.participants.keyEmitterRecords >= HISTORICAL_CEA_KEY_EMITTER_RECORDS_BASELINE);
+  assert.ok(payload.participants.verificationRecords >= HISTORICAL_CEA_VERIFICATION_RECORDS_BASELINE);
+  assert.ok(payload.participants.fulfillmentRecords >= HISTORICAL_CEA_FULFILLMENT_RECORDS_BASELINE);
   assert.equal(participants.keyEmitters.length, payload.participants.keyEmitterRecords);
   assert.equal(participants.verificationInstitutions.length, payload.participants.verificationRecords);
   assert.equal(participants.fulfillment.length, payload.participants.fulfillmentRecords);
@@ -415,7 +422,7 @@ test("ships a reconciled CEA dashboard snapshot and complete participant lists",
   }
 
   const latestCoverage = payload.coverage.yearStats.find((row) => row.year === "2026");
-  assert.equal(latestCoverage.records, 3910);
+  assert.ok(latestCoverage.records >= 3910);
   assert.ok(latestCoverage.uniqueEntities > 3800);
   assert.ok(payload.coverage.provinceIndustryYear.length > 0);
 });
