@@ -33,7 +33,7 @@ test("derives the latest bulletin reporting periods", () => {
     empty: false,
   });
   assert.deepEqual(bulletinPeriodRange("2026-08-09", "month"), {
-    start: "2026-08-01",
+    start: "2026-08-03",
     end: "2026-08-08",
     empty: false,
   });
@@ -43,14 +43,16 @@ test("derives the latest bulletin reporting periods", () => {
     empty: true,
   });
   assert.deepEqual(bulletinPeriodRange("2026-09-01", "month"), {
-    start: "2026-09-01",
+    start: "2026-08-31",
     end: "2026-08-31",
-    empty: true,
+    empty: false,
   });
   assert.equal(bulletinPeriodLabel("2026-08-10", "week"), "本周数据暂未更新");
-  assert.equal(bulletinPeriodLabel("2026-08-11", "week"), "统计区间：2026-08-10日至2026-08-11日");
-  assert.equal(bulletinPeriodLabel("2026-09-01", "month"), "本月数据暂未更新");
-  assert.equal(bulletinPeriodLabel("2026-09-02", "month"), "统计区间：2026-09-01日至2026-09-02日");
+  assert.equal(bulletinPeriodLabel("2026-08-11", "week"), "统计区间：2026-08-10日至2026-08-10日");
+  assert.equal(bulletinPeriodLabel("2026-09-01", "month"), "统计区间：2026-08-31日至2026-08-31日");
+  assert.equal(bulletinPeriodLabel("2026-09-02", "month"), "统计区间：2026-08-31日至2026-09-01日");
+  assert.equal(bulletinPeriodLabel("2026-08-20", "week"), "统计区间：2026-08-17日至2026-08-19日");
+  assert.equal(bulletinPeriodLabel("2026-08-20", "month"), "统计区间：2026-08-17日至2026-08-19日");
 });
 
 async function render() {
@@ -106,6 +108,7 @@ test("server-renders the CCER research dashboard shell", async () => {
   assert.doesNotMatch(dashboardSource, /from ["']next\/image["']/);
   assert.doesNotMatch(dashboardSource, /institutionSearch|输入机构名称/);
   assert.match(dashboardSource, /id="market-pulse-title">关键指标<\/h2>/);
+  assert.match(dashboardSource, /projectDataThrough = shiftDate\(snapshotDate, -1\)/);
   assert.match(dashboardSource, /已发布方法学数量/);
   assert.match(dashboardSource, /各状态项目数量与预计年均减排量/);
   assert.match(dashboardSource, /stack:\s*"project-count"/);
@@ -223,6 +226,8 @@ test("server-renders the CCER research dashboard shell", async () => {
   );
   assert.doesNotMatch(dashboardSource, /METHOD_COLORS|methodolog(?:y|ies).{0,30}(?:===|==)\s*9/i);
   assert.match(dashboardSource, /useState\("18"\)/);
+  assert.match(dashboardSource, /className="table-total-row"/);
+  assert.match(dashboardSource, /\(row\.share \* 100\)\.toFixed\(2\)/);
 });
 
 test("ships a complete and internally consistent dashboard dataset", async () => {
@@ -242,6 +247,7 @@ test("ships a complete and internally consistent dashboard dataset", async () =>
   assert.equal(payload.carbonPriceComparison.ccerDataThrough, payload.dataThrough);
   assert.ok(payload.carbonPriceComparison.months.length > 0);
   assert.equal(payload.carbonPriceComparison.months.at(-1).month, payload.dataThrough.slice(0, 7));
+  assert.deepEqual(payload.sources.map((source) => source.label), ["全国 CCER 市场每日行情", "项目与减排量信息公开"]);
   const firstCcerTradeMonth = payload.trades.find((row) => row.volume > 0).date.slice(0, 7);
   assert.equal(payload.carbonPriceComparison.months[0].month, firstCcerTradeMonth);
   for (const row of payload.carbonPriceComparison.months) {
@@ -359,11 +365,16 @@ test("adds a separate CEA view without replacing the CCER dashboard", async () =
   assert.match(ceaSource, /覆盖范围/);
   assert.match(ceaSource, /市场交易/);
   assert.match(ceaSource, /市场参与方/);
-  assert.match(ceaSource, /CEA日K线与分交易方式成交量/);
+  assert.match(ceaSource, /priceView === "kline"/);
+  assert.match(ceaSource, /无交易日期保持空白/);
+  assert.match(ceaSource, /label="覆盖行业数量" value="4"/);
   assert.match(ceaSource, /年度市场换手率/);
   assert.match(ceaSource, /CEA—CCER月度价格比较/);
   assert.match(ceaSource, /省内机构与省外机构结构/);
-  assert.match(ceaSource, /技术服务机构—重点排放单位桑基图/);
+  assert.match(ceaSource, /服务的重点排放单位/);
+  assert.doesNotMatch(ceaSource, /PUBLIC LIST SNAPSHOT/);
+  assert.doesNotMatch(ceaSource, /label="FIGURE 02"/);
+  assert.doesNotMatch(ceaSource, /label="FIGURE 14"/);
   assert.match(ceaSource, /relationshipBadge/);
 });
 
@@ -371,9 +382,11 @@ test("ships a reconciled CEA dashboard snapshot and complete participant lists",
   const payload = JSON.parse(await readFile(new URL("../public/data/cea-dashboard.json", import.meta.url), "utf8"));
   const participants = JSON.parse(await readFile(new URL("../public/data/cea-participants.json", import.meta.url), "utf8"));
 
-  assert.equal(payload.tradeDataThrough, "2026-08-07");
-  assert.equal(payload.priceComparisonDataThrough, "2026-08-10");
-  assert.equal(payload.daily.length, 4769);
+  assert.equal(payload.tradeDataThrough, "2026-08-19");
+  assert.equal(payload.priceComparisonDataThrough, "2026-08-19");
+  assert.equal(payload.daily.length, 4825);
+  assert.equal(payload.marketSummary.latestDate, payload.tradeDataThrough);
+  assert.ok(payload.daily.every((row) => [row.open, row.high, row.low, row.close].every((value) => value == null || value > 0)));
   assert.equal(payload.participants.keyEmitterRecords, 22358);
   assert.equal(payload.participants.verificationRecords, 1325);
   assert.equal(payload.participants.fulfillmentRecords, 8555);
@@ -398,12 +411,13 @@ test("ships a reconciled CEA dashboard snapshot and complete participant lists",
   assert.ok(payload.turnoverByYear.every((row) => Math.abs(row.turnoverRate - row.volume / row.allowance) < 1e-8));
 
   for (const row of payload.priceComparison.filter((item) => item.ceaPrice && item.ccerPrice)) {
-    assert.ok(Math.abs(row.spreadRatio - (row.ceaPrice / row.ccerPrice - 1)) < 1e-7);
+    assert.ok(Math.abs(row.spreadRatio - (row.ccerPrice / row.ceaPrice - 1)) < 1e-7);
   }
 
   const latestCoverage = payload.coverage.yearStats.find((row) => row.year === "2026");
   assert.equal(latestCoverage.records, 3910);
   assert.ok(latestCoverage.uniqueEntities > 3800);
+  assert.ok(payload.coverage.provinceIndustryYear.length > 0);
 });
 
 test("guards the automated CETS PDF refresh with a fail-closed publish gate", async () => {

@@ -10,7 +10,9 @@ const workspace = process.env.CCER_WORKSPACE
 const snapshotRoot = process.env.CEA_SNAPSHOT_ROOT
   ? path.resolve(process.env.CEA_SNAPSHOT_ROOT)
   : path.join(workspace, "outputs", "019fea8f-1712-7b01-bb43-f2bea0fb57cb");
-const tradeDir = path.join(snapshotRoot, "cea_market");
+const tradeDir = process.env.CEA_TRADE_DIR
+  ? path.resolve(process.env.CEA_TRADE_DIR)
+  : path.join(snapshotRoot, "cea_market");
 const publicInfoDir = path.join(snapshotRoot, "cets_public_information");
 
 const readJson = async (file) => JSON.parse(await fs.readFile(file, "utf8"));
@@ -32,19 +34,25 @@ const [
   verificationQuality,
   fulfillmentQuality,
   ccerDashboard,
+  existingCeaDashboard,
   publishedVerification,
 ] = await Promise.all([
   readJson(path.join(tradeDir, "data", "daily_wide.json")),
   readJson(path.join(tradeDir, "data", "quality_report.json")),
-  readJson(path.join(publicInfoDir, "data", "key_emitters_enterprise.json")),
-  readJson(path.join(publicInfoDir, "data", "verification_list.json")),
-  readJson(path.join(publicInfoDir, "data", "fulfillment_enterprise.json")),
-  readJson(path.join(publicInfoDir, "qa", "key_emitters_enterprise_quality.json")),
-  readJson(path.join(publicInfoDir, "qa", "verification_list_quality.json")),
-  readJson(path.join(publicInfoDir, "qa", "fulfillment_enterprise_quality.json")),
+  readJsonIfPresent(path.join(publicInfoDir, "data", "key_emitters_enterprise.json"), []),
+  readJsonIfPresent(path.join(publicInfoDir, "data", "verification_list.json"), []),
+  readJsonIfPresent(path.join(publicInfoDir, "data", "fulfillment_enterprise.json"), []),
+  readJsonIfPresent(path.join(publicInfoDir, "qa", "key_emitters_enterprise_quality.json")),
+  readJsonIfPresent(path.join(publicInfoDir, "qa", "verification_list_quality.json")),
+  readJsonIfPresent(path.join(publicInfoDir, "qa", "fulfillment_enterprise_quality.json")),
   readJson(path.join(siteDir, "public", "data", "dashboard.json")),
+  readJsonIfPresent(path.join(siteDir, "public", "data", "cea-dashboard.json")),
   readJsonIfPresent(path.join(siteDir, "public", "data", "cea-verification.json")),
 ]);
+
+const hasPublicInformationSnapshot = keyEmittersRaw.length > 0
+  && verificationRaw.length > 0
+  && fulfillmentRaw.length > 0;
 
 // Never promote the three-document development sample into the production
 // dashboard. A published verification snapshot is usable only after the
@@ -54,6 +62,8 @@ const verificationPdfQuality = publishedVerification?.quality?.publish_ready
   : null;
 const verificationDetailsRaw = verificationPdfQuality ? publishedVerification.details || [] : [];
 const verificationTargetsRaw = verificationPdfQuality ? publishedVerification.targets || [] : [];
+const sourceMissingPdfIds = new Set(verificationPdfQuality?.source_missing_pdf_ids || []);
+const sourceUnavailablePdfIds = new Set(verificationPdfQuality?.source_unavailable_pdf_ids || []);
 
 const numberOrNull = (value) => {
   if (value == null || value === "") return null;
@@ -62,6 +72,21 @@ const numberOrNull = (value) => {
 };
 
 const numberOrZero = (value) => numberOrNull(value) ?? 0;
+const priceOrNull = (value) => {
+  const parsed = numberOrNull(value);
+  return parsed != null && parsed > 0 ? parsed : null;
+};
+
+const shanghaiTimestamp = () => `${new Intl.DateTimeFormat("sv-SE", {
+  timeZone: "Asia/Shanghai",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+}).format(new Date()).replace(" ", "T")}+08:00`;
 
 const subjects = [
   { code: "COMCEA", label: "综合行情" },
@@ -104,10 +129,10 @@ const daily = dailyWideRaw
   .map((row) => ({
     date: row.trade_date,
     subject: row.subject_code,
-    open: numberOrNull(row.open_price_cny_per_t),
-    high: numberOrNull(row.high_price_cny_per_t),
-    low: numberOrNull(row.low_price_cny_per_t),
-    close: numberOrNull(row.close_price_cny_per_t),
+    open: priceOrNull(row.open_price_cny_per_t),
+    high: priceOrNull(row.high_price_cny_per_t),
+    low: priceOrNull(row.low_price_cny_per_t),
+    close: priceOrNull(row.close_price_cny_per_t),
     changeRate: numberOrNull(row.change_rate),
     listingVolume: numberOrZero(row.listing_volume_t),
     listingAmount: numberOrZero(row.listing_amount_cny),
@@ -221,6 +246,25 @@ const coverageIndustryYear = groupCounts(
   return { year, industry, records };
 });
 
+const coverageProvinceIndustryYear = groupCounts(
+  keyEmittersRaw,
+  (row) => `${row.year}|${row.province || "未披露"}|${row.industry || "未披露"}`,
+).map(([key, records]) => {
+  const [year, province, industry] = key.split("|");
+  const rows = keyEmittersRaw.filter(
+    (row) => String(row.year) === year
+      && (row.province || "未披露") === province
+      && (row.industry || "未披露") === industry,
+  );
+  return {
+    year,
+    province,
+    industry,
+    records,
+    uniqueEntities: new Set(rows.map((row) => row.unified_social_credit_code)).size,
+  };
+});
+
 const keyEmitters = keyEmittersRaw.map((row) => ({
   id: row.key_emitter_record_id,
   year: String(row.year),
@@ -245,7 +289,13 @@ const verificationInstitutions = verificationRaw.map((row) => ({
   uscc: row.unified_social_credit_code,
   authority: row.publishing_authority,
   publishedAt: row.published_at,
-  detailStatus: detailIds.has(row.verification_list_id) ? "PDF已解析" : "待解析",
+  detailStatus: detailIds.has(row.verification_list_id)
+    ? "PDF已解析"
+    : sourceMissingPdfIds.has(row.verification_list_id)
+      ? "官网未附PDF"
+      : sourceUnavailablePdfIds.has(row.verification_list_id)
+        ? "官网链接失效"
+        : "待解析",
 }));
 
 const fulfillment = fulfillmentRaw.map((row) => ({
@@ -285,13 +335,15 @@ for (const row of keyEmitters) {
 }
 const verificationLookup = new Map(verificationInstitutions.map((row) => [row.id, row]));
 
-const verificationTargets = verificationTargetsRaw.map((row) => {
+const mappedVerificationTargets = verificationTargetsRaw.map((row) => {
   const target = emitterLookup.get(`${row.year}|${row.target_uscc}`) || emitterLookup.get(row.target_uscc);
   const institution = verificationLookup.get(row.verification_list_id);
   return {
     verificationId: row.verification_list_id,
     year: String(row.year),
-    industry: row.industry,
+    industry: target?.industry && target.industry !== "未披露"
+      ? target.industry
+      : row.industry || institution?.industry || "",
     institutionName: row.institution_name,
     institutionUscc: row.institution_uscc,
     institutionProvince: institution?.province || "",
@@ -306,6 +358,16 @@ const verificationTargets = verificationTargetsRaw.map((row) => {
     isLocal: Boolean(institution?.province && target?.province && institution.province === target.province),
   };
 });
+const seenVerificationRelationships = new Set();
+const analyticalVerificationTargets = mappedVerificationTargets.filter((row) => {
+  const key = [row.pdfUrl, row.year, row.institutionUscc, row.targetUscc].join("|");
+  if (seenVerificationRelationships.has(key)) return false;
+  seenVerificationRelationships.add(key);
+  return true;
+});
+const verificationTargets = hasPublicInformationSnapshot
+  ? analyticalVerificationTargets
+  : existingCeaDashboard?.participants?.verificationTargets || [];
 
 const comparison = ccerDashboard.carbonPriceComparison.months.map((row) => ({
   month: row.month,
@@ -316,8 +378,8 @@ const comparison = ccerDashboard.carbonPriceComparison.months.map((row) => ({
   ccerAmount: row.ccerTurnover,
   ccerPrice: row.ccerPrice,
   spreadRatio:
-    row.ceaPrice != null && row.ccerPrice != null && row.ccerPrice !== 0
-      ? Number((row.ceaPrice / row.ccerPrice - 1).toFixed(8))
+    row.ceaPrice != null && row.ccerPrice != null && row.ceaPrice !== 0
+      ? Number((row.ccerPrice / row.ceaPrice - 1).toFixed(8))
       : null,
 }));
 
@@ -327,10 +389,10 @@ const cumulativeVolume = compositeRows.reduce((total, row) => total + row.totalV
 const cumulativeAmount = compositeRows.reduce((total, row) => total + row.totalAmount, 0);
 
 const payload = {
-  generatedAt: new Date().toISOString(),
+  generatedAt: shanghaiTimestamp(),
   tradeDataThrough: tradeQuality.summary.last_data_date,
   priceComparisonDataThrough: ccerDashboard.carbonPriceComparison.ceaDataThrough,
-  participantCapturedAt: keyEmittersRaw[0]?.captured_at || "",
+  participantCapturedAt: keyEmittersRaw[0]?.captured_at || existingCeaDashboard?.participantCapturedAt || "",
   subjects,
   tradeMethods: tradeMethods.map((method) => ({
     code: method.code,
@@ -364,34 +426,66 @@ const payload = {
   annualTrade,
   monthlyTrade,
   priceComparison: comparison,
-  coverage: {
+  coverage: hasPublicInformationSnapshot ? {
     yearStats: coverageYearStats,
     provinceYear: coverageProvinceYear,
+    provinceIndustryYear: coverageProvinceIndustryYear,
     industryYear: coverageIndustryYear,
-  },
+  } : existingCeaDashboard.coverage,
   participants: {
-    keyEmitterRecords: keyEmitters.length,
-    verificationRecords: verificationInstitutions.length,
-    fulfillmentRecords: fulfillment.length,
-    fulfillmentYearStats,
+    keyEmitterRecords: hasPublicInformationSnapshot ? keyEmitters.length : existingCeaDashboard.participants.keyEmitterRecords,
+    verificationRecords: hasPublicInformationSnapshot ? verificationInstitutions.length : existingCeaDashboard.participants.verificationRecords,
+    fulfillmentRecords: hasPublicInformationSnapshot ? fulfillment.length : existingCeaDashboard.participants.fulfillmentRecords,
+    fulfillmentYearStats: hasPublicInformationSnapshot ? fulfillmentYearStats : existingCeaDashboard.participants.fulfillmentYearStats,
     verificationDetails: verificationDetailsRaw,
     verificationTargets,
     detailFile: "data/cea-participants.json",
   },
   quality: {
     trade: tradeQuality,
-    keyEmitters: keyEmitterQuality,
-    verification: verificationQuality,
-    fulfillment: fulfillmentQuality,
+    keyEmitters: keyEmitterQuality || existingCeaDashboard.quality.keyEmitters,
+    verification: verificationQuality || existingCeaDashboard.quality.verification,
+    fulfillment: fulfillmentQuality || existingCeaDashboard.quality.fulfillment,
     verificationPdfCoverage: {
       parsed: verificationPdfQuality?.matched_list_records ?? verificationDetailsRaw.length,
-      expected: verificationPdfQuality?.expected_list_records ?? verificationQuality.expected_total,
+      expected: verificationPdfQuality?.expected_list_records ?? verificationQuality?.expected_total ?? existingCeaDashboard.participants.verificationRecords,
       targets: verificationTargets.length,
-      coverageRate: verificationPdfQuality?.coverage_rate ?? verificationDetailsRaw.length / verificationQuality.expected_total,
-      status: verificationPdfQuality?.publish_ready ? "complete" : "partial",
-      publishReady: Boolean(verificationPdfQuality?.publish_ready),
-      checkedAt: verificationPdfQuality?.checked_at || "",
-      issueCount: verificationPdfQuality?.issue_count ?? 0,
+      rawTargets: hasPublicInformationSnapshot
+        ? mappedVerificationTargets.length
+        : existingCeaDashboard.quality.verificationPdfCoverage?.rawTargets ?? verificationTargets.length,
+      duplicateRelationshipsRemoved: hasPublicInformationSnapshot
+        ? mappedVerificationTargets.length - verificationTargets.length
+        : existingCeaDashboard.quality.verificationPdfCoverage?.duplicateRelationshipsRemoved ?? 0,
+      coverageRate: verificationPdfQuality?.coverage_rate
+        ?? existingCeaDashboard.quality.verificationPdfCoverage?.coverageRate
+        ?? verificationDetailsRaw.length / Math.max(1, verificationQuality?.expected_total || 0),
+      effectiveCoverageRate: verificationPdfQuality?.effective_coverage_rate
+        ?? existingCeaDashboard.quality.verificationPdfCoverage?.effectiveCoverageRate
+        ?? 0,
+      sourceMissingPdf: verificationPdfQuality?.source_missing_pdf_count
+        ?? existingCeaDashboard.quality.verificationPdfCoverage?.sourceMissingPdf
+        ?? 0,
+      sourceUnavailablePdf: verificationPdfQuality?.source_unavailable_pdf_count
+        ?? existingCeaDashboard.quality.verificationPdfCoverage?.sourceUnavailablePdf
+        ?? 0,
+      unresolved: verificationPdfQuality?.remaining_missing_record_ids?.length
+        ?? existingCeaDashboard.quality.verificationPdfCoverage?.unresolved
+        ?? 0,
+      errors: verificationPdfQuality?.error_count
+        ?? existingCeaDashboard.quality.verificationPdfCoverage?.errors
+        ?? 0,
+      status: verificationPdfQuality
+        ? (verificationPdfQuality.publish_ready ? "complete" : "partial")
+        : existingCeaDashboard.quality.verificationPdfCoverage?.status || "partial",
+      publishReady: verificationPdfQuality
+        ? Boolean(verificationPdfQuality.publish_ready)
+        : Boolean(existingCeaDashboard.quality.verificationPdfCoverage?.publishReady),
+      checkedAt: verificationPdfQuality?.checked_at
+        || existingCeaDashboard.quality.verificationPdfCoverage?.checkedAt
+        || "",
+      issueCount: verificationPdfQuality?.issue_count
+        ?? existingCeaDashboard.quality.verificationPdfCoverage?.issueCount
+        ?? 0,
     },
   },
   definitions: {
@@ -426,7 +520,9 @@ const output = path.join(siteDir, "public", "data", "cea-dashboard.json");
 const participantOutput = path.join(siteDir, "public", "data", "cea-participants.json");
 await fs.writeFile(
   participantOutput,
-  JSON.stringify({ keyEmitters, verificationInstitutions, fulfillment }),
+  hasPublicInformationSnapshot
+    ? JSON.stringify({ keyEmitters, verificationInstitutions, fulfillment })
+    : await fs.readFile(participantOutput, "utf8"),
   "utf8",
 );
 await fs.writeFile(output, JSON.stringify(payload), "utf8");

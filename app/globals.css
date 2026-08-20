@@ -1305,6 +1305,11 @@ input:focus {
   max-height: none;
 }
 
+.table-total-row td {
+  border-top: 2px solid var(--ink);
+  background: #edf2ef;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -2543,7 +2548,7 @@ tbody tr:hover td {
 
 .coverage-fact-grid {
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 14px;
 }
@@ -2670,7 +2675,8 @@ tbody tr:hover td {
   padding-right: 9px;
 }
 
-.cea-coverage-grid .panel {
+.cea-coverage-grid .panel,
+.cea-coverage-panel {
   min-height: 580px;
 }
 
@@ -2725,10 +2731,8 @@ tbody tr:hover td {
   margin: 14px 0;
 }
 
-.cea-global-filter {
-  position: sticky;
-  top: 78px;
-  z-index: 15;
+.cea-global-filter,
+.cea-section-filter {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2739,25 +2743,33 @@ tbody tr:hover td {
   border-left: 5px solid var(--teal);
   background: rgba(238, 244, 240, 0.96);
   box-shadow: 0 8px 24px rgba(20, 33, 31, 0.08);
-  backdrop-filter: blur(12px);
 }
 
-.cea-global-filter > div {
+.cea-global-filter > div:first-child,
+.cea-section-filter > div:first-child {
   display: flex;
   align-items: baseline;
   gap: 10px;
 }
 
-.cea-global-filter > div span {
+.cea-global-filter > div:first-child span,
+.cea-section-filter > div:first-child span {
   color: var(--muted);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
 }
 
-.cea-global-filter > div strong {
+.cea-global-filter > div:first-child strong,
+.cea-section-filter > div:first-child strong {
   font-family: var(--serif);
   font-size: 18px;
+}
+
+.cea-filter-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
 }
 
 .cea-kline-chart {
@@ -3076,11 +3088,17 @@ tbody tr:hover td {
   font-size: 20px;
 }
 
+.cea-related-records h3 span {
+  margin-left: 8px;
+  color: var(--teal-dark);
+  font-family: var(--sans);
+  font-size: 11px;
+}
+
 @media (max-width: 1250px) {
   .market-switcher { width: 78px; }
   .market-view { margin-left: 78px; }
   .coverage-fact-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .coverage-fact-grid > :last-child { grid-column: 1 / -1; }
   .cea-three-column-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cea-three-column-grid > :last-child { grid-column: 1 / -1; }
 }
@@ -3103,10 +3121,8 @@ tbody tr:hover td {
   .market-switcher-foot { display: none; }
   .market-view { margin-left: 0; padding-top: 62px; }
   .market-view .site-header { top: 62px; }
-  .cea-global-filter { top: 136px; }
   .coverage-fact-grid,
   .cea-three-column-grid { grid-template-columns: 1fr; }
-  .coverage-fact-grid > :last-child,
   .cea-three-column-grid > :last-child { grid-column: auto; }
   .cea-coverage-grid,
   .cea-trade-grid,
@@ -3128,9 +3144,11 @@ tbody tr:hover td {
   .coverage-sector-list { grid-template-columns: 1fr; }
   .province-drilldown,
   .cea-structure-heading,
+  .cea-global-filter,
+  .cea-section-filter,
   .participant-load-state { align-items: flex-start; flex-direction: column; }
   .province-drilldown div { align-items: flex-start; flex-direction: column; gap: 2px; }
-  .cea-global-filter { position: static; }
+  .cea-filter-controls { width: 100%; flex-wrap: wrap; }
   .cea-kline-chart { height: 520px; min-width: 760px; }
   .cea-full-width-panel:has(.cea-kline-chart) .chart-block { overflow-x: auto; }
   .cea-large-chart { min-width: 760px; }

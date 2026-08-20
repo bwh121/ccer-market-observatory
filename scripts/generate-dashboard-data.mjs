@@ -105,6 +105,11 @@ try {
 }
 
 const currentSnapshotDate = normalizeDate(quality.generated_at) || new Date().toISOString().slice(0, 10);
+const previousSnapshotDate = (() => {
+  const value = new Date(`${currentSnapshotDate}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() - 1);
+  return value.toISOString().slice(0, 10);
+})();
 const HISTORICAL_REDUCTION_BUCKET = "before-2026-07-11";
 const HISTORICAL_PROJECT_BUCKET = "before-2026-07-11";
 
@@ -266,6 +271,7 @@ const trades = tradesRaw
     note: row.parse_notes || "",
     sourceUrl: row.article_url,
   }))
+  .filter((row) => row.date <= previousSnapshotDate)
   .sort((a, b) => String(a.date).localeCompare(String(b.date)));
 
 if (ceaQuality.status === "FAIL" || Number(ceaQuality.summary?.error_issues || 0) > 0) {
@@ -285,6 +291,7 @@ for (const row of ceaMonthlyRaw) {
 }
 const firstCcerMonth = trades.find((row) => row.volume > 0)?.date.slice(0, 7) || "";
 const latestCcerMonth = trades.at(-1)?.date.slice(0, 7) || "";
+const tradeDataThrough = trades.at(-1)?.date || "";
 const carbonPriceMonths = monthRange(firstCcerMonth, latestCcerMonth).map((month) => {
   const ccer = ccerMonthly.get(month) || { volume: 0, turnover: 0 };
   const cea = ceaMonthly.get(month) || { volume: 0, turnover: 0 };
@@ -309,7 +316,7 @@ const carbonPriceMonths = monthRange(firstCcerMonth, latestCcerMonth).map((month
   };
 });
 const carbonPriceComparison = {
-  ccerDataThrough: quality.trade.date_max,
+  ccerDataThrough: tradeDataThrough,
   ceaDataThrough: ceaQuality.summary?.last_data_date || "",
   months: carbonPriceMonths,
 };
@@ -350,7 +357,7 @@ const statusOrder = [...STATUS_ORDER, ...discoveredStatuses].map(([code, name]) 
 
 const dashboard = {
   generatedAt: quality.generated_at,
-  dataThrough: quality.trade.date_max,
+  dataThrough: tradeDataThrough,
   tradeSummary,
   trades,
   carbonPriceComparison,
@@ -380,12 +387,7 @@ const dashboard = {
   },
   sources: [
     { label: "全国 CCER 市场每日行情", url: quality.sources.trade_index },
-    { label: "全国碳排放配额（CEA）交易数据", url: "https://shyx.cneeex.com/qdata.html" },
     { label: "项目与减排量信息公开", url: quality.sources.project_list },
-    {
-      label: "中国省级行政区划底图",
-      url: "https://geo.datav.aliyun.com/areas_v3/bound/100000_full.json",
-    },
   ],
 };
 

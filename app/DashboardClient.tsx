@@ -12,7 +12,7 @@ import { EChart, echarts } from "./components/EChart";
 import { DataDownloadMenu } from "./components/DataActions";
 import type { ExportRow, ExportSection } from "./components/DataActions";
 import { AccountAccessButton } from "./components/ExportAccess";
-import { bulletinPeriodLabel, bulletinPeriodRange } from "./dateUtils";
+import { bulletinPeriodLabel, bulletinPeriodRange, shiftDate } from "./dateUtils";
 import type { BulletinPeriod } from "./dateUtils";
 
 type DashboardBuildEnv = { BASE_URL?: string; VITE_STATIC_GITHUB?: string };
@@ -172,6 +172,7 @@ type InstitutionRow = {
   auditCount: number;
   verifyCount: number;
   totalCount: number;
+  share: number;
   details: { role: string; project: Project }[];
 };
 
@@ -368,7 +369,7 @@ const buildCalendarAxisSeries = (
           y: bounds.y + bounds.height + 13,
           text: `${Number(api.value(1))}月`,
           fill: "#596966",
-          fontSize: 9,
+          fontSize: 11,
           align: "center",
           verticalAlign: "middle",
         },
@@ -413,7 +414,7 @@ const buildCalendarAxisSeries = (
               y: lineY,
               text: `${Number(api.value(2))}年`,
               fill: "#31403d",
-              fontSize: 9,
+              fontSize: 11,
               fontWeight: 600,
               align: "center",
               verticalAlign: "middle",
@@ -1866,7 +1867,8 @@ export default function DashboardClient() {
           name: "CCER 相对溢价率",
           type: "bar",
           yAxisIndex: 1,
-          barMaxWidth: 14,
+          barMinWidth: 12,
+          barMaxWidth: 22,
           z: 2,
           itemStyle: { color: "#b5523b" },
           data: rows.map((row) => {
@@ -2451,18 +2453,24 @@ export default function DashboardClient() {
         (role === "审定" ? bucket.audit : bucket.verify).set(project.projectName, project);
       }
     }
-    return [...grouped.entries()]
+    const rows = [...grouped.entries()]
       .map(([name, bucket]) => ({
         name,
         auditCount: bucket.audit.size,
         verifyCount: bucket.verify.size,
         totalCount: bucket.audit.size + bucket.verify.size,
+        share: 0,
         details: [
           ...[...bucket.audit.values()].map((project) => ({ role: "审定", project })),
           ...[...bucket.verify.values()].map((project) => ({ role: "核查", project })),
         ],
       }))
       .sort((a, b) => b.totalCount - a.totalCount || a.name.localeCompare(b.name, "zh-CN"));
+    const grandTotal = rows.reduce((total, row) => total + row.totalCount, 0);
+    return rows.map((row) => ({
+      ...row,
+      share: grandTotal > 0 ? row.totalCount / grandTotal : 0,
+    }));
   }, [data]);
 
   const relationData = useMemo(() => {
@@ -2578,6 +2586,7 @@ export default function DashboardClient() {
       };
     });
   const snapshotDate = data.generatedAt.slice(0, 10);
+  const projectDataThrough = shiftDate(snapshotDate, -1);
   const bulletinRange = bulletinPeriodRange(snapshotDate, bulletinPeriod);
   const bulletinRangeLabel = bulletinPeriodLabel(snapshotDate, bulletinPeriod);
   const isInBulletinRange = (date: string) => (
@@ -2769,7 +2778,11 @@ export default function DashboardClient() {
     审定项目数量: row.auditCount,
     核查项目数量: row.verifyCount,
     合计: row.totalCount,
+    占比: `${(row.share * 100).toFixed(2)}%`,
   }));
+  const institutionGrandTotal = institutionRows.reduce((total, row) => total + row.totalCount, 0);
+  const institutionAuditTotal = institutionRows.reduce((total, row) => total + row.auditCount, 0);
+  const institutionVerifyTotal = institutionRows.reduce((total, row) => total + row.verifyCount, 0);
 
   return (
     <>
@@ -2802,7 +2815,7 @@ export default function DashboardClient() {
               <div className="eyebrow">MARKET AT A GLANCE</div>
               <h2 id="market-pulse-title">关键指标</h2>
             </div>
-            <p>项目与减排量数据截至 {snapshotDate}，交易数据截至 {data.tradeSummary.latestDate}</p>
+            <p>项目与减排量数据截至 {projectDataThrough}，交易数据截至 {data.tradeSummary.latestDate}</p>
           </div>
           <div className="market-pulse-grid">
             <KpiCard label="已发布方法学数量" value={exactNumber(data.methodologies.length, 0)} unit="项" tone="ink" />
@@ -3429,6 +3442,7 @@ export default function DashboardClient() {
                     <th>审定项目数量</th>
                     <th>核查项目数量</th>
                     <th>合计</th>
+                    <th>占比</th>
                     <th>详情</th>
                   </tr>
                 </thead>
@@ -3439,6 +3453,7 @@ export default function DashboardClient() {
                       <td>{row.auditCount}</td>
                       <td>{row.verifyCount}</td>
                       <td><strong>{row.totalCount}</strong></td>
+                      <td>{(row.share * 100).toFixed(2)}%</td>
                       <td>
                         <button
                           type="button"
@@ -3472,6 +3487,14 @@ export default function DashboardClient() {
                       </td>
                     </tr>
                   ))}
+                  <tr className="table-total-row">
+                    <td><strong>合计</strong></td>
+                    <td><strong>{institutionAuditTotal}</strong></td>
+                    <td><strong>{institutionVerifyTotal}</strong></td>
+                    <td><strong>{institutionGrandTotal}</strong></td>
+                    <td><strong>{institutionGrandTotal > 0 ? "100.00%" : "0.00%"}</strong></td>
+                    <td>—</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -3563,7 +3586,7 @@ export default function DashboardClient() {
             </article>
           </div>
           <div className="sources-row">
-            {data.sources.map((source) => (
+            {data.sources.filter((source) => ["全国 CCER 市场每日行情", "项目与减排量信息公开"].includes(source.label)).map((source) => (
               <a key={source.url} href={source.url} target="_blank" rel="noreferrer">
                 {source.label}
               </a>
