@@ -377,6 +377,8 @@ test("adds a separate CEA view without replacing the CCER dashboard", async () =
   assert.match(ceaSource, /CEA—CCER月度价格比较/);
   assert.match(ceaSource, /省内机构与省外机构结构/);
   assert.match(ceaSource, /服务的重点排放单位/);
+  assert.match(ceaSource, /tradeCalendarText/);
+  assert.doesNotMatch(ceaSource, /1,227个预期交易日/);
   assert.doesNotMatch(ceaSource, /PUBLIC LIST SNAPSHOT/);
   assert.doesNotMatch(ceaSource, /label="FIGURE 02"/);
   assert.doesNotMatch(ceaSource, /label="FIGURE 14"/);

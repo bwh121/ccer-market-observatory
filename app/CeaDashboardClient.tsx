@@ -179,6 +179,14 @@ type CeaDashboardData = {
     detailFile: string;
   };
   quality: Record<string, unknown> & {
+    trade?: {
+      summary?: {
+        expected_trading_dates?: number;
+        dates_with_data?: number;
+        warning_issues?: number;
+        error_issues?: number;
+      };
+    };
     verificationPdfCoverage?: {
       parsed: number;
       expected: number;
@@ -481,6 +489,12 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
   const relationshipBadge = `${exactNumber(pdfCoverage.targets)}条核查关系`;
   const pdfCoverageText = `${exactNumber(pdfCoverage.parsed)}份可用PDF（名单${exactNumber(pdfCoverage.expected)}条）`;
   const sourcePdfExceptions = `${exactNumber(pdfCoverage.sourceMissingPdf || 0)}条官网未附PDF、${exactNumber(pdfCoverage.sourceUnavailablePdf || 0)}条官方链接失效`;
+  const tradeQuality = data.quality.trade?.summary;
+  const expectedTradingDates = tradeQuality?.expected_trading_dates || new Set(data.daily.map((row) => row.date)).size;
+  const datesWithData = tradeQuality?.dates_with_data || expectedTradingDates;
+  const tradeCalendarText = expectedTradingDates === datesWithData
+    ? `${exactNumber(datesWithData)}个预期交易日均有官方返回`
+    : `${exactNumber(expectedTradingDates)}个预期交易日中${exactNumber(datesWithData)}个有官方返回`;
 
   const loadParticipants = async () => {
     if (participants || participantsLoading) return;
@@ -1107,7 +1121,7 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
           <SectionHeading index="03" eyebrow="MARKET PARTICIPANTS" title="市场参与方" description={pdfCoverage.publishReady ? `用年度公开名录查询重点排放单位和技术服务机构；机构—企业关系图使用${pdfCoverageText}中已通过校验的数据（${sourcePdfExceptions}）。` : "用年度公开名录查询重点排放单位和技术服务机构；机构—企业关系图将在PDF全量校验通过后开放。"} />
 
           <article className="panel cea-participant-panel">
-            <PanelTitle label="TABLE 01" title="重点排放单位与核查机构查询" note="企业列表22,358条、机构列表1,325条；完整名录按需加载，避免拖慢首屏。" badge="全量列表" />
+            <PanelTitle label="TABLE 01" title="重点排放单位与核查机构查询" note={`企业列表${exactNumber(data.participants.keyEmitterRecords)}条、机构列表${exactNumber(data.participants.verificationRecords)}条；完整名录按需加载，避免拖慢首屏。`} badge="全量列表" />
             <div className="participant-mode-switch" role="tablist" aria-label="参与方查询维度">
               <button type="button" className={participantMode === "enterprise" ? "active" : ""} onClick={() => changeParticipantMode("enterprise")}>重点排放单位 <span>{exactNumber(data.participants.keyEmitterRecords)}</span></button>
               <button type="button" className={participantMode === "institution" ? "active" : ""} onClick={() => changeParticipantMode("institution")}>技术服务机构 <span>{exactNumber(data.participants.verificationRecords)}</span></button>
@@ -1164,8 +1178,8 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
           <article>
             <div className="eyebrow">DATA QUALITY</div>
             <h2>完整性与限制</h2>
-            <p><strong>01</strong>交易日历连续，1,227个预期交易日均有官方返回；价格行情存在9项警告但无错误。</p>
-            <p><strong>02</strong>重点排放单位22,358条、核查机构1,325条、履约信息8,555条，均已完成分页核对。</p>
+            <p><strong>01</strong>交易日历连续，{tradeCalendarText}；价格行情存在{exactNumber(tradeQuality?.warning_issues || 0)}项警告、{exactNumber(tradeQuality?.error_issues || 0)}项错误。</p>
+            <p><strong>02</strong>重点排放单位{exactNumber(data.participants.keyEmitterRecords)}条、核查机构{exactNumber(data.participants.verificationRecords)}条、履约信息{exactNumber(data.participants.fulfillmentRecords)}条，均已完成分页核对。</p>
             <p><strong>03</strong>{pdfCoverage.publishReady ? `核查机构公开名单已逐条核对：${pdfCoverageText}，${sourcePdfExceptions}，未解释缺口与解析错误均为0；形成${exactNumber(pdfCoverage.targets)}条公开记录—企业关系。` : "核查机构PDF详情尚未达到全量发布门槛，机构—企业关系图保持关闭；候选数据不会覆盖线上版本。"}</p>
             <p><strong>04</strong>换手率总配额采用用户给定分析口径，并非官方最终配额清缴量。</p>
           </article>
