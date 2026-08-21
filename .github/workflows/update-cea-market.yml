@@ -1,0 +1,250 @@
+name: Update CEA market data
+
+on:
+  schedule:
+    - cron: "2 0 * * *"
+      timezone: Asia/Shanghai
+    - cron: "12 1 * * *"
+      timezone: Asia/Shanghai
+    - cron: "22 3 * * *"
+      timezone: Asia/Shanghai
+    - cron: "32 6 * * *"
+      timezone: Asia/Shanghai
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/update-cea-market.yml"
+      - "scripts/check_publication_freshness.py"
+      - "scripts/collect_cea_data.py"
+      - "scripts/validate_cea_dashboard.py"
+      - "scripts/validate_cea_quality.py"
+      - "tests/test_check_publication_freshness.py"
+      - "tests/test_cea_workflow.py"
+      - "tests/test_validate_cea_dashboard.py"
+      - "tests/test_validate_cea_quality.py"
+      - "data-pipeline/cea-full-cache-baseline-20260819.zip"
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: update-cea-market
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    # The exchange endpoint is reliable from the institute's approved Windows
+    # collector but can reject or stall on shared cloud-runner addresses.
+    runs-on: [self-hosted, Windows, X64, cets-collector]
+    timeout-minutes: 25
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      CEA_WORK_DIR: ${{ vars.CEA_WORK_DIR || 'C:\actions-runner-ccer\cea-market-work' }}
+      CEA_SOURCE_DIR: C:\a\cea-src-${{ github.run_id }}
+    defaults:
+      run:
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File {0}
+        working-directory: C:\a\cea-src-${{ github.run_id }}
+    steps:
+      - name: Prepare short source directory
+        working-directory: C:\actions-runner-ccer
+        run: |
+          $sourceDir = [System.IO.Path]::GetFullPath($env:CEA_SOURCE_DIR)
+          $allowedRoot = [System.IO.Path]::GetFullPath('C:\a')
+          if (-not $sourceDir.StartsWith($allowedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to prepare source outside $allowedRoot"
+          }
+          New-Item -ItemType Directory -Force -Path $sourceDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $env:CEA_WORK_DIR | Out-Null
+
+          $toolNode = Get-ChildItem -Path 'C:\actions-runner-ccer\_work\_tool\node\24.*\x64\node.exe' -File -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if ($toolNode) {
+            $nodeDir = $toolNode.DirectoryName
+          } else {
+            $nodeDir = 'C:\actions-runner-ccer\externals\node24\bin'
+          }
+          $node = Join-Path $nodeDir 'node.exe'
+          if (-not (Test-Path -LiteralPath $node)) {
+            throw "Node 24 was not found on the dedicated runner"
+          }
+          $nodeDir | Out-File -FilePath $env:GITHUB_PATH -Append
+          & $node --version
+
+      - name: Download source snapshot through GitHub SSH
+        working-directory: C:\actions-runner-ccer
+        run: |
+          git clone --depth 1 --filter=blob:none --no-checkout "git@github.com:$env:GITHUB_REPOSITORY.git" $env:CEA_SOURCE_DIR
+          if ($LASTEXITCODE -ne 0) { throw "GitHub SSH clone failed" }
+          git -C $env:CEA_SOURCE_DIR checkout --detach $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw "Failed to check out $env:GITHUB_SHA" }
+
+      - name: Verify local runtimes
+        run: |
+          python --version
+          python -c "import sys; assert sys.version_info >= (3, 12), sys.version"
+          node --version
+
+      - name: Test CEA pipeline helpers
+        run: |
+          python -m unittest discover -s tests -p "test_*cea*.py" -v
+          python -m unittest discover -s tests -p "test_check_publication_freshness.py" -v
+
+      - name: Check whether today's CEA snapshot is already published
+        id: freshness
+        run: |
+          python scripts/check_publication_freshness.py `
+            --dashboard public/data/cea-dashboard.json `
+            --event-name "$env:GITHUB_EVENT_NAME"
+
+      - name: Seed full CEA history when local cache is cold
+        if: steps.freshness.outputs.needs_update == 'true'
+        run: |
+          $rawDir = Join-Path $env:CEA_WORK_DIR 'raw'
+          $cachedFiles = if (Test-Path -LiteralPath $rawDir) {
+            @(Get-ChildItem -LiteralPath $rawDir -File -Recurse).Count
+          } else {
+            0
+          }
+          if ($cachedFiles -lt 6000) {
+            Expand-Archive `
+              -LiteralPath 'data-pipeline/cea-full-cache-baseline-20260819.zip' `
+              -DestinationPath $env:CEA_WORK_DIR `
+              -Force
+            "Seeded verified CEA history through 2026-08-19." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          }
+
+      - name: Collect complete official CEA market data
+        if: steps.freshness.outputs.needs_update == 'true'
+        run: |
+          $endDate = (Get-Date).Date.AddDays(-1).ToString('yyyy-MM-dd')
+          python scripts/collect_cea_data.py `
+            --output-dir $env:CEA_WORK_DIR `
+            --end-date $endDate `
+            --workers 8
+
+      - name: Enforce source-data publication gate
+        if: steps.freshness.outputs.needs_update == 'true'
+        run: python scripts/validate_cea_quality.py --report "$env:CEA_WORK_DIR/data/quality_report.json"
+
+      - name: Generate CEA dashboard data
+        if: steps.freshness.outputs.needs_update == 'true'
+        run: |
+          $env:CEA_TRADE_DIR = $env:CEA_WORK_DIR
+          node scripts/generate-cea-dashboard-data.mjs
+
+      - name: Enforce generated-data publication gate
+        if: steps.freshness.outputs.needs_update == 'true'
+        run: |
+          python scripts/validate_cea_dashboard.py `
+            --dashboard public/data/cea-dashboard.json `
+            --quality-report "$env:CEA_WORK_DIR/data/quality_report.json"
+
+      - name: Commit exact validated CEA artifact
+        if: steps.freshness.outputs.needs_update == 'true'
+        id: publish
+        run: |
+          git config user.name "ccer-data-pipeline[bot]"
+          git config user.email "ccer-data-pipeline[bot]@users.noreply.github.com"
+          git add -- public/data/cea-dashboard.json
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) {
+            "changed=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "No CEA data changes detected." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+            exit 0
+          }
+          if ($LASTEXITCODE -ne 1) {
+            throw "Unable to inspect staged CEA changes"
+          }
+
+          $snapshotDate = node -p "JSON.parse(require('fs').readFileSync('public/data/cea-dashboard.json','utf8')).generatedAt.slice(0,10)"
+          git commit -m "Update CEA dashboard data for $snapshotDate"
+          if ($LASTEXITCODE -ne 0) { throw "CEA data commit failed" }
+          git fetch origin main
+          if ($LASTEXITCODE -ne 0) { throw "Unable to fetch public main branch" }
+          git rebase origin/main
+          if ($LASTEXITCODE -ne 0) { throw "Unable to rebase CEA data commit" }
+
+          $unexpected = @(git diff --name-only origin/main..HEAD | Where-Object { $_ -ne 'public/data/cea-dashboard.json' })
+          if ($unexpected.Count -gt 0) {
+            throw "Refusing to publish unexpected files: $($unexpected -join ', ')"
+          }
+          "changed=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "commit=$(git rev-parse HEAD)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Push exact website commit
+        if: steps.freshness.outputs.needs_update == 'true' && steps.publish.outputs.changed == 'true'
+        run: |
+          git push origin HEAD:main
+          if ($LASTEXITCODE -ne 0) { throw "CEA data push failed" }
+
+      - name: Write publication summary
+        if: steps.freshness.outputs.needs_update == 'true' && steps.publish.outputs.changed == 'true'
+        run: |
+          "### CEA website update" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "Published commit: ${{ steps.publish.outputs.commit }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "The commit triggers the production Pages workflow." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+
+      - name: Write already-current summary
+        if: steps.freshness.outputs.needs_update == 'false'
+        run: |
+          "Today's validated CEA snapshot is already public; this fallback run exited without rebuilding." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+
+      - name: Close prior CEA update alert after success
+        if: success()
+        continue-on-error: true
+        run: |
+          $headers = @{ Accept = 'application/vnd.github+json'; Authorization = "Bearer $env:GITHUB_TOKEN"; 'User-Agent' = 'cea-market-workflow'; 'X-GitHub-Api-Version' = '2022-11-28' }
+          $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY"
+          $title = '[Alert] CEA market auto-update failed'
+          $issues = Invoke-RestMethod -Uri "$api/issues?state=open&per_page=100" -Headers $headers -TimeoutSec 60
+          foreach ($issue in @($issues | Where-Object { $_.title -eq $title })) {
+            $comment = @{ body = "A later validated run succeeded at $([DateTime]::UtcNow.ToString('o'))." } | ConvertTo-Json
+            Invoke-RestMethod -Method Post -Uri "$api/issues/$($issue.number)/comments" -Headers $headers -Body $comment -ContentType 'application/json' -TimeoutSec 60 | Out-Null
+            $close = @{ state = 'closed' } | ConvertTo-Json
+            Invoke-RestMethod -Method Patch -Uri "$api/issues/$($issue.number)" -Headers $headers -Body $close -ContentType 'application/json' -TimeoutSec 60 | Out-Null
+          }
+
+      - name: Create or update CEA failure alert
+        if: failure() || cancelled()
+        continue-on-error: true
+        run: |
+          $headers = @{ Accept = 'application/vnd.github+json'; Authorization = "Bearer $env:GITHUB_TOKEN"; 'User-Agent' = 'cea-market-workflow'; 'X-GitHub-Api-Version' = '2022-11-28' }
+          $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY"
+          $title = '[Alert] CEA market auto-update failed'
+          $body = @(
+            "The fail-closed CEA update did not replace the last validated public snapshot."
+            "Run: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          ) -join "`n`n"
+          $issues = Invoke-RestMethod -Uri "$api/issues?state=open&per_page=100" -Headers $headers -TimeoutSec 60
+          $existing = @($issues | Where-Object { $_.title -eq $title }) | Select-Object -First 1
+          if ($existing) {
+            $payload = @{ body = $body } | ConvertTo-Json
+            Invoke-RestMethod -Method Post -Uri "$api/issues/$($existing.number)/comments" -Headers $headers -Body $payload -ContentType 'application/json' -TimeoutSec 60 | Out-Null
+          } else {
+            $payload = @{ title = $title; body = $body } | ConvertTo-Json
+            Invoke-RestMethod -Method Post -Uri "$api/issues" -Headers $headers -Body $payload -ContentType 'application/json' -TimeoutSec 60 | Out-Null
+          }
+
+      - name: Upload CEA quality evidence
+        if: always() && steps.freshness.outputs.needs_update == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cea-market-quality-${{ github.run_id }}
+          path: ${{ env.CEA_WORK_DIR }}\data\quality_report.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Clean short source directory
+        if: always()
+        working-directory: C:\actions-runner-ccer
+        run: |
+          $sourceDir = [System.IO.Path]::GetFullPath($env:CEA_SOURCE_DIR)
+          $allowedRoot = [System.IO.Path]::GetFullPath('C:\a')
+          if (-not $sourceDir.StartsWith($allowedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to remove source outside $allowedRoot"
+          }
+          Remove-Item -LiteralPath $sourceDir -Recurse -Force -ErrorAction SilentlyContinue

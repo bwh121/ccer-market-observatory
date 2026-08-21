@@ -1,4 +1,4 @@
-# CEA 核查机构 PDF 数据流水线
+# CEA 数据流水线
 
 这套流水线把全国碳市场信息网“核查机构信息公开”列表及其 PDF 附件转换成网页可直接使用的数据。
 
@@ -28,3 +28,11 @@
 - `public/data/exports/verification-details.csv`：机构及 PDF 解析详情表。
 - `public/data/exports/verification-targets.csv`：机构—重点排放单位关系表。
 - `public/data/exports/verification-pdf-quality.json`：完整性、重复项和复核队列。
+
+## CEA 交易行情自动更新
+
+`.github/workflows/update-cea-market.yml` 使用同一台带 `cets-collector` 标签的 Windows 自托管运行器，在北京时间每天 00:02 运行，并在 01:12、03:22、06:32 做错峰补偿。交易所接口在共享云端地址上可能拒绝或长时间无响应，因此主通道使用研究院本机网络；私有数据仓库中的云端流程保留为后备通道。
+
+工作流从经核验的 2021-07-16—2026-08-19 冷启动基线恢复历史缓存，仅请求缺失交易日，再完整生成价格行情、三种交易方式成交统计和网页聚合指标。`validate_cea_quality.py` 检查官方请求、预期交易日和数据规模，`validate_cea_dashboard.py` 再检查网页日期、重复主键、零值价格、综合行情连续性及核查机构 PDF 完整度。任一门槛不通过时沿用线上上一版，不提交候选数据，并创建或更新公开告警 Issue。
+
+通过两道质量门后，工作流只提交 `public/data/cea-dashboard.json`。该提交自动触发现有 GitHub Pages 生产构建；完整质量报告保留为 14 天的 Actions 产物。持久缓存默认位于 `C:\actions-runner-ccer\cea-market-work`，可由仓库变量 `CEA_WORK_DIR` 覆盖。
