@@ -2443,6 +2443,53 @@ tbody tr:hover td {
   color: #d9e5e1;
   background: #14211f;
   box-shadow: 8px 0 28px rgba(10, 28, 24, 0.16);
+  transform: translateX(-104%);
+  pointer-events: none;
+  transition: transform 200ms ease;
+}
+
+.market-switcher.is-open {
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+.market-switcher-toggle {
+  position: fixed;
+  z-index: 61;
+  top: 13px;
+  left: 13px;
+  display: grid;
+  gap: 1px;
+  min-width: 54px;
+  padding: 7px 8px;
+  border: 1px solid rgba(99, 172, 156, 0.68);
+  border-radius: 3px;
+  color: #d9e5e1;
+  background: #14211f;
+  box-shadow: 0 6px 16px rgba(10, 28, 24, 0.2);
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  line-height: 1.1;
+}
+
+.market-switcher-toggle strong {
+  color: #79b7a9;
+  font-family: var(--serif);
+  font-size: 13px;
+}
+
+.market-switcher-guide {
+  position: fixed;
+  z-index: 59;
+  top: 15px;
+  left: 78px;
+  padding: 7px 10px;
+  border: 1px solid #b7c9c3;
+  border-radius: 2px;
+  color: #40524e;
+  background: #f8fbf8;
+  box-shadow: 0 8px 20px rgba(20, 33, 31, 0.12);
+  font-size: 10px;
 }
 
 .market-switcher-brand {
@@ -2526,7 +2573,7 @@ tbody tr:hover td {
 
 .market-view {
   min-width: 0;
-  margin-left: 92px;
+  margin-left: 0;
 }
 
 .cea-hero {
@@ -2545,6 +2592,53 @@ tbody tr:hover td {
   font-size: 14px;
   letter-spacing: 0.04em;
 }
+
+.cea-market-pulse .market-pulse-grid {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cea-market-pulse .kpi-card {
+  min-height: 108px;
+  padding: 12px 9px 10px;
+}
+
+.cea-market-pulse .kpi-label {
+  min-height: 28px;
+  font-size: 10px;
+  white-space: normal;
+}
+
+.cea-market-pulse .kpi-value { font-size: clamp(20px, 1.85vw, 29px); }
+.cea-market-pulse .kpi-note { font-size: 9px; }
+
+.kpi-card-has-tooltip { position: relative; cursor: help; }
+
+.kpi-card-has-tooltip::after {
+  position: absolute;
+  z-index: 8;
+  right: 0;
+  bottom: calc(100% + 9px);
+  width: max-content;
+  max-width: min(320px, 88vw);
+  padding: 9px 10px;
+  content: attr(data-tooltip);
+  border: 1px solid #8aa49d;
+  border-radius: 2px;
+  color: #eaf4f0;
+  background: #14211f;
+  box-shadow: 0 12px 26px rgba(10, 28, 24, 0.22);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.5;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(3px);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.kpi-card-has-tooltip:hover::after,
+.kpi-card-has-tooltip:focus-visible::after { opacity: 1; transform: translateY(0); }
 
 .coverage-fact-grid {
   display: grid;
@@ -2677,13 +2771,16 @@ tbody tr:hover td {
 
 .cea-coverage-grid .panel,
 .cea-coverage-panel {
-  min-height: 580px;
+  min-height: 460px;
 }
 
 .cea-coverage-map,
 .cea-industry-chart {
-  height: 455px;
+  height: 340px;
 }
+
+.cea-fulfillment-grid { align-items: stretch; }
+.cea-fulfillment-spacer { min-height: 1px; }
 
 .province-drilldown {
   display: flex;
@@ -2774,15 +2871,15 @@ tbody tr:hover td {
 
 .cea-kline-chart {
   width: 100%;
-  height: 620px;
+  height: 540px;
 }
 
 .cea-large-chart {
-  height: 470px;
+  height: 385px;
 }
 
 .cea-mid-chart {
-  height: 390px;
+  height: 330px;
 }
 
 .cea-calendar-chart {
@@ -2791,7 +2888,7 @@ tbody tr:hover td {
 }
 
 .cea-comparison-chart {
-  height: 500px;
+  height: 405px;
 }
 
 .cea-structure-heading {
@@ -2838,7 +2935,7 @@ tbody tr:hover td {
 
 .cea-structure-chart {
   width: 100%;
-  height: 360px;
+  height: 310px;
 }
 
 .cea-participant-panel {
@@ -3014,8 +3111,10 @@ tbody tr:hover td {
 
 .cea-participant-chart {
   width: 100%;
-  height: 420px;
+  height: 360px;
 }
+
+.cea-wide-participant-chart { height: 440px; }
 
 .cea-sankey-chart {
   width: 100%;
@@ -3159,4 +3258,38 @@ tbody tr:hover td {
   .participant-result-summary { align-items: flex-start; flex-direction: column; }
   .participant-result-summary span { margin-left: 0; }
   .cea-detail-list div { grid-template-columns: 1fr; gap: 3px; }
+}
+
+/* CEA revisions: compact desktop cards and a pop-out market selector. */
+@media (min-width: 901px) {
+  .market-view { margin-left: 0; }
+}
+
+@media (max-width: 1180px) and (min-width: 901px) {
+  .cea-market-pulse .market-pulse-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+  .cea-market-pulse .kpi-label { font-size: 9px; }
+  .cea-market-pulse .kpi-value { font-size: 20px; }
+}
+
+@media (max-width: 900px) {
+  .market-switcher {
+    transform: translateY(-104%);
+    pointer-events: none;
+  }
+  .market-switcher.is-open {
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .market-view { margin-left: 0; padding-top: 0; }
+  .market-view .site-header { top: 0; }
+  .market-switcher-toggle { top: 8px; left: 8px; }
+  .market-switcher-guide { top: 9px; left: 70px; }
+  .cea-market-pulse .market-pulse-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (max-width: 620px) {
+  .cea-market-pulse .market-pulse-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cea-kline-chart { height: 470px; }
+  .cea-wide-participant-chart { min-width: 760px; height: 410px; }
+  .cea-full-width-panel:has(.cea-wide-participant-chart) .chart-block { overflow-x: auto; }
 }

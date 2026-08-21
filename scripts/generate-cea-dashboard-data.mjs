@@ -65,6 +65,14 @@ const verificationTargetsRaw = verificationPdfQuality ? publishedVerification.ta
 const sourceMissingPdfIds = new Set(verificationPdfQuality?.source_missing_pdf_ids || []);
 const sourceUnavailablePdfIds = new Set(verificationPdfQuality?.source_unavailable_pdf_ids || []);
 
+// The official list has two records whose registered-address province failed
+// the source parser. Their unified social credit codes retain the registered
+// administrative prefixes, so preserve that deterministic correction here.
+const institutionProvinceOverrides = new Map([
+  ["91130100774441336R", "河北省"],
+  ["91140000MA7XXCF67C", "山西省"],
+]);
+
 const numberOrNull = (value) => {
   if (value == null || value === "") return null;
   const parsed = Number(value);
@@ -338,6 +346,7 @@ const verificationLookup = new Map(verificationInstitutions.map((row) => [row.id
 const mappedVerificationTargets = verificationTargetsRaw.map((row) => {
   const target = emitterLookup.get(`${row.year}|${row.target_uscc}`) || emitterLookup.get(row.target_uscc);
   const institution = verificationLookup.get(row.verification_list_id);
+  const institutionProvince = institution?.province || institutionProvinceOverrides.get(row.institution_uscc) || "";
   return {
     verificationId: row.verification_list_id,
     year: String(row.year),
@@ -346,7 +355,7 @@ const mappedVerificationTargets = verificationTargetsRaw.map((row) => {
       : row.industry || institution?.industry || "",
     institutionName: row.institution_name,
     institutionUscc: row.institution_uscc,
-    institutionProvince: institution?.province || "",
+    institutionProvince,
     targetOrder: row.target_order,
     targetName: row.target_entity_name,
     targetUscc: row.target_uscc,
@@ -355,7 +364,7 @@ const mappedVerificationTargets = verificationTargetsRaw.map((row) => {
     timeliness: row.timeliness,
     result: row.result,
     pdfUrl: row.pdf_url,
-    isLocal: Boolean(institution?.province && target?.province && institution.province === target.province),
+    isLocal: Boolean(institutionProvince && target?.province && institutionProvince === target.province),
   };
 });
 const seenVerificationRelationships = new Set();

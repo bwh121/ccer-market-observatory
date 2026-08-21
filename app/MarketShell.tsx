@@ -13,6 +13,7 @@ const readMarket = (): Market => {
 
 export default function MarketShell() {
   const [market, setMarket] = useState<Market>(() => readMarket());
+  const [switcherOpen, setSwitcherOpen] = useState(true);
 
   useEffect(() => {
     const handlePopState = () => setMarket(readMarket());
@@ -21,6 +22,7 @@ export default function MarketShell() {
   }, []);
 
   const switchMarket = (next: Market) => {
+    setSwitcherOpen(false);
     if (next === market) return;
     const url = new URL(window.location.href);
     if (next === "cea") url.searchParams.set("market", "cea");
@@ -33,7 +35,18 @@ export default function MarketShell() {
 
   return (
     <div className="market-app-shell">
-      <aside className="market-switcher" aria-label="碳市场类型切换">
+      <button
+        type="button"
+        className="market-switcher-toggle"
+        aria-label={switcherOpen ? "收起市场切换栏" : "切换碳市场"}
+        aria-expanded={switcherOpen}
+        onClick={() => setSwitcherOpen((open) => !open)}
+      >
+        <span>市场</span>
+        <strong>{market.toUpperCase()}</strong>
+      </button>
+      {!switcherOpen ? <div className="market-switcher-guide">点击左上角切换 CCER / CEA</div> : null}
+      <aside className={`market-switcher ${switcherOpen ? "is-open" : ""}`} aria-label="碳市场类型切换" aria-hidden={!switcherOpen}>
         <div className="market-switcher-brand" aria-hidden="true">
           <span>CN</span>
           <strong>CARBON</strong>

@@ -364,6 +364,7 @@ test("adds a separate CEA view without replacing the CCER dashboard", async () =
 
   assert.match(marketShellSource, /自愿碳市场/);
   assert.match(marketShellSource, /强制碳市场/);
+  assert.match(marketShellSource, /市场切换栏/);
   assert.match(marketShellSource, /market === "cea" \? <CeaDashboardClient \/> : <DashboardClient \/>/);
   assert.match(pageSource, /<MarketShell \/>/);
   assert.match(pagesEntrySource, /<MarketShell \/>/);
@@ -375,7 +376,7 @@ test("adds a separate CEA view without replacing the CCER dashboard", async () =
   assert.match(ceaSource, /label="覆盖行业数量" value="4"/);
   assert.match(ceaSource, /年度市场换手率/);
   assert.match(ceaSource, /CEA—CCER月度价格比较/);
-  assert.match(ceaSource, /省内机构与省外机构结构/);
+  assert.match(ceaSource, /本地与外地机构分配/);
   assert.match(ceaSource, /服务的重点排放单位/);
   assert.match(ceaSource, /tradeCalendarText/);
   assert.doesNotMatch(ceaSource, /1,227个预期交易日/);
@@ -404,6 +405,7 @@ test("ships a reconciled CEA dashboard snapshot and complete participant lists",
   assert.equal(participants.fulfillment.length, payload.participants.fulfillmentRecords);
   assert.equal(payload.quality.verificationPdfCoverage.parsed, payload.participants.verificationDetails.length);
   assert.equal(payload.quality.verificationPdfCoverage.targets, payload.participants.verificationTargets.length);
+  assert.equal(payload.participants.verificationTargets.filter((row) => !row.institutionProvince).length, 0);
   assert.ok(payload.quality.verificationPdfCoverage.parsed <= payload.quality.verificationPdfCoverage.expected);
   if (!payload.quality.verificationPdfCoverage.publishReady) {
     assert.equal(payload.participants.verificationDetails.length, 0);
