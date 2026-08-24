@@ -2459,23 +2459,26 @@ tbody tr:hover td {
   top: 13px;
   left: 13px;
   display: grid;
-  gap: 1px;
-  min-width: 54px;
-  padding: 7px 8px;
-  border: 1px solid rgba(99, 172, 156, 0.68);
-  border-radius: 3px;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(99, 172, 156, 0.58);
+  border-radius: 50%;
   color: #d9e5e1;
   background: #14211f;
-  box-shadow: 0 6px 16px rgba(10, 28, 24, 0.2);
-  font-size: 8px;
-  letter-spacing: 0.06em;
-  line-height: 1.1;
+  box-shadow: 0 4px 12px rgba(10, 28, 24, 0.16);
+  font-size: 15px;
+  line-height: 1;
+  opacity: 0.12;
+  transition: opacity 160ms ease, transform 160ms ease;
 }
 
-.market-switcher-toggle strong {
-  color: #79b7a9;
-  font-family: var(--serif);
-  font-size: 13px;
+.market-switcher-toggle:hover,
+.market-switcher-toggle:focus-visible,
+.market-switcher-toggle.is-active {
+  opacity: 1;
+  transform: scale(1.04);
 }
 
 .market-switcher-guide {
@@ -2771,12 +2774,16 @@ tbody tr:hover td {
 
 .cea-coverage-grid .panel,
 .cea-coverage-panel {
-  min-height: 460px;
+  min-height: 510px;
 }
 
 .cea-coverage-map,
 .cea-industry-chart {
-  height: 340px;
+  height: 390px;
+}
+
+.cea-coverage-map {
+  height: 420px;
 }
 
 .cea-fulfillment-grid { align-items: stretch; }
@@ -3114,6 +3121,47 @@ tbody tr:hover td {
   height: 360px;
 }
 
+.cea-structure-pairs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 14px 0;
+}
+
+.cea-structure-pair {
+  min-width: 0;
+  padding-top: 8px;
+  border-top: 4px solid #147d70;
+}
+
+.cea-structure-pair.is-subject {
+  border-top-color: #ba8744;
+}
+
+.cea-structure-pair-label {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin: 0 2px 8px;
+  color: #40524e;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.cea-structure-pair-label small {
+  color: #71817c;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.cea-structure-pair-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .cea-wide-participant-chart { height: 440px; }
 
 .cea-sankey-chart {
@@ -3200,6 +3248,7 @@ tbody tr:hover td {
   .coverage-fact-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cea-three-column-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cea-three-column-grid > :last-child { grid-column: 1 / -1; }
+  .cea-structure-pairs { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 900px) {
@@ -3223,6 +3272,7 @@ tbody tr:hover td {
   .coverage-fact-grid,
   .cea-three-column-grid { grid-template-columns: 1fr; }
   .cea-three-column-grid > :last-child { grid-column: auto; }
+  .cea-structure-pair-grid { grid-template-columns: 1fr; }
   .cea-coverage-grid,
   .cea-trade-grid,
   .cea-participant-grid { grid-template-columns: 1fr; }

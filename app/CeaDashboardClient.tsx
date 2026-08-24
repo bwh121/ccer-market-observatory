@@ -241,6 +241,15 @@ const compactNumber = (value: number, digits = 1) => {
   return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(value);
 };
 
+const compactVolumeAxis = (value: number) => {
+  const absolute = Math.abs(value);
+  if (absolute >= 10_000_000) return `${(value / 100_000_000).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1")}亿`;
+  if (absolute >= 10_000) return `${(value / 10_000).toFixed(1).replace(/\.0$/, "")}万`;
+  return exactNumber(value);
+};
+
+const volumeInWan = (value: number) => `${(value / 10_000).toFixed(value % 10_000 === 0 ? 0 : 1).replace(/\.0$/, "")}万`;
+
 const exactNumber = (value: number, digits = 0) =>
   new Intl.NumberFormat("zh-CN", {
     minimumFractionDigits: digits,
@@ -582,7 +591,7 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
     };
     return ({
     animation: false,
-    legend: { top: 2, right: 120, selectedMode: false, textStyle: axisLabel, data: [priceLegend, "挂牌协议", "大宗协议", "单向竞价"] },
+    legend: { top: 2, right: 106, selectedMode: false, textStyle: axisLabel, data: [priceLegend, "挂牌协议", "大宗协议", "单向竞价"] },
     tooltip: {
       trigger: "axis",
       axisPointer: { type: "cross" },
@@ -626,7 +635,7 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
     ],
     yAxis: [
       { type: "value", name: "价格（元/吨）", min: 0, axisLine, axisLabel, splitLine },
-      { type: "value", name: "成交量（吨）", position: "right", max: (value: { max: number }) => value.max > 0 ? Math.ceil((value.max * 1.35) / 1_000_000) * 1_000_000 : 1, axisLine, axisLabel: { ...axisLabel, formatter: (value: number) => compactNumber(value) }, splitLine: { show: false } },
+      { type: "value", name: "成交量（吨）", position: "right", splitNumber: 4, max: (value: { max: number }) => value.max > 0 ? Math.ceil((value.max * 1.25) / 1_000_000) * 1_000_000 : 1, axisLine, axisLabel: { ...axisLabel, formatter: (value: number) => compactVolumeAxis(value) }, splitLine: { show: false } },
     ],
     dataZoom: [
       { type: "slider", xAxisIndex: [0, 1], start: 0, end: 100, filterMode: "none", bottom: 2, height: 20, showDataShadow: false, brushSelect: false },
@@ -638,9 +647,9 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
         xAxisIndex: 0,
         yAxisIndex: 0,
         z: 5,
-        barWidth: "92%",
+        barWidth: "97%",
         barMinWidth: 2,
-        barMaxWidth: 18,
+        barMaxWidth: 24,
         data: chartRows.map((row) => isCompletePrice(row) && row.totalVolume > 0 ? [row.open, row.close, row.low, row.high] : ["-", "-", "-", "-"]),
         itemStyle: { color: "#b5523b", color0: "#2f7d68", borderColor: "#b5523b", borderColor0: "#2f7d68" },
       }] : [{
@@ -655,9 +664,9 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
         lineStyle: { width: 2.2, color: "#9b4d5b" },
         itemStyle: { color: "#9b4d5b" },
       }]),
-      { name: "挂牌协议", type: "bar", stack: "volume", xAxisIndex: 0, yAxisIndex: 1, z: 1, barWidth: "76%", data: chartRows.map((row) => row?.listingVolume || 0), itemStyle: { color: METHOD_COLORS["10"], opacity: 0.38 } },
-      { name: "大宗协议", type: "bar", stack: "volume", xAxisIndex: 0, yAxisIndex: 1, z: 1, barWidth: "76%", data: chartRows.map((row) => row?.blockVolume || 0), itemStyle: { color: METHOD_COLORS["20"], opacity: 0.38 } },
-      { name: "单向竞价", type: "bar", stack: "volume", xAxisIndex: 0, yAxisIndex: 1, z: 1, barWidth: "76%", data: chartRows.map((row) => row?.auctionVolume || 0), itemStyle: { color: METHOD_COLORS["21"], opacity: 0.42 } },
+      { name: "挂牌协议", type: "bar", stack: "volume", xAxisIndex: 0, yAxisIndex: 1, z: 1, barWidth: "88%", data: chartRows.map((row) => row?.listingVolume || 0), itemStyle: { color: METHOD_COLORS["10"], opacity: 0.38 } },
+      { name: "大宗协议", type: "bar", stack: "volume", xAxisIndex: 0, yAxisIndex: 1, z: 1, barWidth: "88%", data: chartRows.map((row) => row?.blockVolume || 0), itemStyle: { color: METHOD_COLORS["20"], opacity: 0.38 } },
+      { name: "单向竞价", type: "bar", stack: "volume", xAxisIndex: 0, yAxisIndex: 1, z: 1, barWidth: "88%", data: chartRows.map((row) => row?.auctionVolume || 0), itemStyle: { color: METHOD_COLORS["21"], opacity: 0.42 } },
     ],
     });
   }, [chartRows, priceLegend, priceView, tradeDates]);
@@ -712,7 +721,7 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
       grid: { left: 60, right: 60, top: 66, bottom: 42 },
       xAxis: { type: "category", data: periods, axisLine, axisLabel: { ...axisLabel, formatter: (value: string) => `${Number(value.slice(5))}月` } },
       yAxis: [
-        { type: "value", name: "成交量/吨", axisLine, axisLabel: { ...axisLabel, formatter: (value: number) => compactNumber(value) }, splitLine },
+        { type: "value", name: "成交量/万", axisLine, axisLabel: { ...axisLabel, formatter: (value: number) => volumeInWan(value) }, splitLine },
         { type: "value", name: "均价/元", axisLine, axisLabel, splitLine: { show: false } },
       ],
       series: data.tradeMethods.flatMap((method) => {
@@ -736,8 +745,8 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
     return {
       animation: false,
       tooltip: { trigger: "axis" },
-      legend: { show: false },
-      grid: { left: 56, right: 74, top: 24, bottom: 50 },
+      legend: { type: "scroll", orient: "vertical", right: 2, top: "middle", selectedMode: true, textStyle: axisLabel },
+      grid: { left: 56, right: 126, top: 24, bottom: 50 },
       xAxis: {
         type: "category",
         data: monthDays,
@@ -802,13 +811,21 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
   });
   const subjectStructure = data.subjects
     .filter((item) => item.code !== "COMCEA")
-    .map((item) => ({
-      subject: item.code,
-      volume: data.daily
-        .filter((row) => row.subject === item.code && (structurePeriod === "all" || row.date.startsWith(structurePeriod)))
-        .reduce((total, row) => total + row.totalVolume, 0),
-    }))
+    .map((item) => {
+      const rows = data.daily.filter((row) => row.subject === item.code && (structurePeriod === "all" || row.date.startsWith(structurePeriod)));
+      const volume = rows.reduce((total, row) => total + row.totalVolume, 0);
+      const amount = rows.reduce((total, row) => total + row.totalAmount, 0);
+      return { subject: item.code, volume, amount, averagePrice: volume > 0 ? amount / volume : null };
+    })
     .filter((row) => row.volume > 0);
+  const subjectPriceStructure = data.subjects
+    .filter((item) => item.code !== "COMCEA")
+    .map((item) => {
+      const rows = data.daily.filter((row) => row.subject === item.code && (structurePeriod === "all" || row.date.startsWith(structurePeriod)));
+      const volume = rows.reduce((total, row) => total + row.totalVolume, 0);
+      const amount = rows.reduce((total, row) => total + row.totalAmount, 0);
+      return { subject: item.code, volume, amount, averagePrice: volume > 0 ? amount / volume : null };
+    });
 
   const methodStructureOption = useMemo<EChartsOption>(() => ({
     animation: false,
@@ -840,6 +857,32 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
     legend: { bottom: 2, type: "scroll", textStyle: axisLabel },
     series: [{ type: "pie", radius: ["34%", "65%"], center: ["50%", "44%"], roseType: "radius", data: subjectStructure.map((row) => ({ name: row.subject, value: row.volume, itemStyle: { color: SUBJECT_COLORS[row.subject] } })), label: { formatter: "{b}\n{d}%", fontSize: 10 } }],
   }), [subjectStructure]);
+
+  const subjectPriceStructureOption = useMemo<EChartsOption>(() => {
+    const prices = subjectPriceStructure.map((row) => row.averagePrice).filter((value): value is number => value != null);
+    const priceMin = prices.length ? Math.min(...prices) : 0;
+    const priceMax = prices.length ? Math.max(...prices) : 1;
+    const priceSpan = Math.max(priceMax - priceMin, 8);
+    const axisMin = Math.max(0, Math.floor((priceMin - priceSpan * 0.45) / 5) * 5);
+    const axisMax = Math.ceil((priceMax + priceSpan * 0.25) / 5) * 5;
+    return {
+      animation: false,
+      tooltip: { trigger: "axis", formatter: (raw: unknown) => {
+        const params = (Array.isArray(raw) ? raw : [raw]) as Array<{ dataIndex?: number }>;
+        const row = subjectPriceStructure[params[0]?.dataIndex || 0];
+        return row ? `<strong>${row.subject}</strong><br/>${row.averagePrice == null ? "无成交" : `成交均价：${exactNumber(row.averagePrice, 2)} 元/吨`}` : "";
+      } },
+      grid: { left: 54, right: 22, top: 30, bottom: 52 },
+      xAxis: { type: "category", data: subjectPriceStructure.map((row) => row.subject), axisLine, axisLabel: { ...axisLabel, interval: 0 } },
+      yAxis: { type: "value", name: "元/吨", min: axisMin, max: axisMax, axisLine, axisLabel, splitLine },
+      series: [{
+        type: "bar",
+        barMaxWidth: 36,
+        data: subjectPriceStructure.map((row) => ({ value: row.averagePrice, itemStyle: { color: SUBJECT_COLORS[row.subject] } })),
+        label: { show: true, position: "top", formatter: (params: { value?: unknown }) => params.value == null ? "无成交" : Number(params.value).toFixed(2), fontSize: 9 },
+      }],
+    };
+  }, [subjectPriceStructure]);
 
   const priceComparisonOption = useMemo<EChartsOption>(() => {
     const spreads = data.priceComparison.map((row) => row.spreadRatio == null ? null : row.spreadRatio * 100).filter((value): value is number => value != null);
@@ -905,9 +948,9 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
       { type: "value", name: "按期履约率", min: 0, max: 100, axisLine, axisLabel: { ...axisLabel, formatter: (value: number) => `${value}%` }, splitLine: { show: false } },
     ],
     series: [
-      { name: "按期履约", type: "bar", stack: "fulfillment", data: data.participants.fulfillmentYearStats.map((row) => row.onTime), itemStyle: { color: "#147d70" } },
-      { name: "逾期履约", type: "bar", stack: "fulfillment", data: data.participants.fulfillmentYearStats.map((row) => row.overdue), itemStyle: { color: "#ba8744" } },
-      { name: "未履约", type: "bar", stack: "fulfillment", data: data.participants.fulfillmentYearStats.map((row) => row.incomplete), itemStyle: { color: "#9b4d5b" } },
+      { name: "按期履约", type: "bar", stack: "fulfillment", barWidth: "48%", data: data.participants.fulfillmentYearStats.map((row) => row.onTime), itemStyle: { color: "#147d70" } },
+      { name: "逾期履约", type: "bar", stack: "fulfillment", barWidth: "48%", data: data.participants.fulfillmentYearStats.map((row) => row.overdue), itemStyle: { color: "#ba8744" } },
+      { name: "未履约", type: "bar", stack: "fulfillment", barWidth: "48%", data: data.participants.fulfillmentYearStats.map((row) => row.incomplete), itemStyle: { color: "#9b4d5b" } },
       { name: "按期履约率", type: "line", yAxisIndex: 1, data: data.participants.fulfillmentYearStats.map((row) => row.records ? Number((row.onTime / row.records * 100).toFixed(1)) : null), symbolSize: 7, lineStyle: { width: 2.3, color: "#1f5f8b" }, itemStyle: { color: "#1f5f8b" } },
     ],
   }), [data.participants.fulfillmentYearStats]);
@@ -1189,13 +1232,24 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
           </article>
 
           <div className="cea-structure-heading">
-            <div><span>2.1</span><div><h3>交易结构</h3><p>统一选择累计或单个自然年度，三张图同步更新。</p></div></div>
+            <div><span>2.1</span><div><h3>交易结构</h3><p>统一选择累计或单个自然年度，四张图同步更新。</p></div></div>
             <SelectControl label="统计周期" value={structurePeriod} onChange={setStructurePeriod} options={[{ value: "all", label: "累计" }, ...yearOptions.slice().reverse()]} />
           </div>
-          <div className="cea-three-column-grid">
-            <article className="panel"><PanelTitle label="FIGURE 10A" title="交易方式成交量占比" /><EChart option={methodStructureOption} className="cea-structure-chart" ariaLabel="三种交易方式成交量占比" exportTitle="交易方式成交量占比" exportFileName={`FIGURE-10A-${structurePeriod}-交易方式成交量占比`} exportSections={exportSection("交易方式结构", methodStructure.map((row) => ({ 交易方式: row.shortName, 成交量: row.volume, 成交额: row.amount, 平均价格: row.averagePrice })))} /></article>
-            <article className="panel"><PanelTitle label="FIGURE 10B" title="交易方式平均价格" /><EChart option={methodPriceOption} className="cea-structure-chart" ariaLabel="三种交易方式平均价格" exportTitle="交易方式平均价格" exportFileName={`FIGURE-10B-${structurePeriod}-交易方式平均价格`} exportSections={exportSection("交易方式平均价格", methodStructure.map((row) => ({ 交易方式: row.shortName, 平均价格: row.averagePrice })))} /></article>
-            <article className="panel"><PanelTitle label="FIGURE 10C" title="配额规格成交量占比" note="综合行情不重复计入。" /><EChart option={subjectStructureOption} className="cea-structure-chart" ariaLabel="各CEA配额规格成交量占比" exportTitle="配额规格成交量占比" exportFileName={`FIGURE-10C-${structurePeriod}-配额规格成交量占比`} exportSections={exportSection("配额规格结构", subjectStructure.map((row) => ({ 配额规格: row.subject, 成交量: row.volume })))} /></article>
+          <div className="cea-structure-pairs">
+            <div className="cea-structure-pair">
+              <div className="cea-structure-pair-label"><span>交易方式</span><small>成交量与成交均价</small></div>
+              <div className="cea-structure-pair-grid">
+                <article className="panel"><PanelTitle label="FIGURE 10A" title="交易方式成交量占比" /><EChart option={methodStructureOption} className="cea-structure-chart" ariaLabel="三种交易方式成交量占比" exportTitle="交易方式成交量占比" exportFileName={`FIGURE-10A-${structurePeriod}-交易方式成交量占比`} exportSections={exportSection("交易方式结构", methodStructure.map((row) => ({ 交易方式: row.shortName, 成交量: row.volume, 成交额: row.amount, 平均价格: row.averagePrice })))} /></article>
+                <article className="panel"><PanelTitle label="FIGURE 10B" title="交易方式平均价格" /><EChart option={methodPriceOption} className="cea-structure-chart" ariaLabel="三种交易方式平均价格" exportTitle="交易方式平均价格" exportFileName={`FIGURE-10B-${structurePeriod}-交易方式平均价格`} exportSections={exportSection("交易方式平均价格", methodStructure.map((row) => ({ 交易方式: row.shortName, 平均价格: row.averagePrice })))} /></article>
+              </div>
+            </div>
+            <div className="cea-structure-pair is-subject">
+              <div className="cea-structure-pair-label"><span>配额规格</span><small>不重复计入综合行情</small></div>
+              <div className="cea-structure-pair-grid">
+                <article className="panel"><PanelTitle label="FIGURE 10C" title="配额规格成交量占比" /><EChart option={subjectStructureOption} className="cea-structure-chart" ariaLabel="各CEA配额规格成交量占比" exportTitle="配额规格成交量占比" exportFileName={`FIGURE-10C-${structurePeriod}-配额规格成交量占比`} exportSections={exportSection("配额规格结构", subjectStructure.map((row) => ({ 配额规格: row.subject, 成交量: row.volume })))} /></article>
+                <article className="panel"><PanelTitle label="FIGURE 10D" title="配额规格成交均价" note="该周期内无成交时标注“无成交”。" /><EChart option={subjectPriceStructureOption} className="cea-structure-chart" ariaLabel="各CEA配额规格成交均价" exportTitle="配额规格成交均价" exportFileName={`FIGURE-10D-${structurePeriod}-配额规格成交均价`} exportSections={exportSection("配额规格成交均价", subjectPriceStructure.map((row) => ({ 配额规格: row.subject, 成交量: row.volume, 成交额: row.amount, 成交均价: row.averagePrice == null ? "无成交" : row.averagePrice })))} /></article>
+              </div>
+            </div>
           </div>
 
           <article className="panel cea-full-width-panel">

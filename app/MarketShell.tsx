@@ -14,6 +14,13 @@ const readMarket = (): Market => {
 export default function MarketShell() {
   const [market, setMarket] = useState<Market>(() => readMarket());
   const [switcherOpen, setSwitcherOpen] = useState(true);
+  const [showSwitchHint, setShowSwitchHint] = useState(false);
+
+  useEffect(() => {
+    if (!showSwitchHint) return;
+    const timer = window.setTimeout(() => setShowSwitchHint(false), 3200);
+    return () => window.clearTimeout(timer);
+  }, [showSwitchHint]);
 
   useEffect(() => {
     const handlePopState = () => setMarket(readMarket());
@@ -23,6 +30,7 @@ export default function MarketShell() {
 
   const switchMarket = (next: Market) => {
     setSwitcherOpen(false);
+    setShowSwitchHint(true);
     if (next === market) return;
     const url = new URL(window.location.href);
     if (next === "cea") url.searchParams.set("market", "cea");
@@ -37,15 +45,18 @@ export default function MarketShell() {
     <div className="market-app-shell">
       <button
         type="button"
-        className="market-switcher-toggle"
+        className={`market-switcher-toggle${switcherOpen ? " is-active" : ""}`}
         aria-label={switcherOpen ? "收起市场切换栏" : "切换碳市场"}
         aria-expanded={switcherOpen}
-        onClick={() => setSwitcherOpen((open) => !open)}
+        onClick={() => {
+          setSwitcherOpen((open) => !open);
+          setShowSwitchHint(false);
+        }}
       >
-        <span>市场</span>
-        <strong>{market.toUpperCase()}</strong>
+        <span aria-hidden="true">↔</span>
+        <span className="sr-only">切换 CCER 与 CEA 市场</span>
       </button>
-      {!switcherOpen ? <div className="market-switcher-guide">点击左上角切换 CCER / CEA</div> : null}
+      {showSwitchHint && !switcherOpen ? <div className="market-switcher-guide" role="status">左上角可切换 CCER / CEA</div> : null}
       <aside className={`market-switcher ${switcherOpen ? "is-open" : ""}`} aria-label="碳市场类型切换" aria-hidden={!switcherOpen}>
         <div className="market-switcher-brand" aria-hidden="true">
           <span>CN</span>

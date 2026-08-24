@@ -19,13 +19,22 @@ const ceaDataDir = process.env.CEA_DATA_DIR
 
 const readJson = async (name) => JSON.parse(await fs.readFile(path.join(dataDir, name), "utf8"));
 const readCeaJson = async (name) => JSON.parse(await fs.readFile(path.join(ceaDataDir, name), "utf8"));
-const [tradesRaw, projectsRaw, reductionsRaw, quality, ceaMonthlyRaw, ceaQuality] = await Promise.all([
+const publicDashboardPath = path.join(siteDir, "public", "data", "dashboard.json");
+const readOptionalJson = async (target) => {
+  try {
+    return JSON.parse(await fs.readFile(target, "utf8"));
+  } catch {
+    return null;
+  }
+};
+const [tradesRaw, projectsRaw, reductionsRaw, quality, ceaMonthlyRaw, ceaQuality, previousDashboard] = await Promise.all([
   readJson("trade_daily.json"),
   readJson("project_details.json"),
   readJson("reduction_amount_details.json"),
   readJson("quality_report.json"),
-  readCeaJson("monthly.json"),
-  readCeaJson("quality_report.json"),
+  readCeaJson("monthly.json").catch(() => null),
+  readCeaJson("quality_report.json").catch(() => null),
+  readOptionalJson(publicDashboardPath),
 ]);
 
 const STATUS_ORDER = [
@@ -274,20 +283,30 @@ const trades = tradesRaw
   .filter((row) => row.date <= previousSnapshotDate)
   .sort((a, b) => String(a.date).localeCompare(String(b.date)));
 
-if (ceaQuality.status === "FAIL" || Number(ceaQuality.summary?.error_issues || 0) > 0) {
-  throw new Error("CEA quality report is not publishable");
-}
-
 const ccerMonthly = new Map();
 for (const row of trades) addMonthlyTrade(ccerMonthly, row.date, row.volume, row.turnover);
 const ceaMonthly = new Map();
-for (const row of ceaMonthlyRaw) {
-  const month = String(row.month || "");
-  if (!/^\d{4}-\d{2}$/.test(month)) continue;
-  ceaMonthly.set(month, {
-    volume: asNumber(row.volume_t),
-    turnover: asNumber(row.amount_cny),
-  });
+const freshCeaComparison = Array.isArray(ceaMonthlyRaw)
+  && ceaQuality?.status !== "FAIL"
+  && Number(ceaQuality?.summary?.error_issues || 0) === 0;
+if (freshCeaComparison) {
+  for (const row of ceaMonthlyRaw) {
+    const month = String(row.month || "");
+    if (!/^\d{4}-\d{2}$/.test(month)) continue;
+    ceaMonthly.set(month, {
+      volume: asNumber(row.volume_t),
+      turnover: asNumber(row.amount_cny),
+    });
+  }
+} else {
+  for (const row of previousDashboard?.carbonPriceComparison?.months || []) {
+    const month = String(row.month || "");
+    if (!/^\d{4}-\d{2}$/.test(month)) continue;
+    ceaMonthly.set(month, {
+      volume: asNumber(row.ceaVolume),
+      turnover: asNumber(row.ceaTurnover),
+    });
+  }
 }
 const firstCcerMonth = trades.find((row) => row.volume > 0)?.date.slice(0, 7) || "";
 const latestCcerMonth = trades.at(-1)?.date.slice(0, 7) || "";
@@ -317,7 +336,10 @@ const carbonPriceMonths = monthRange(firstCcerMonth, latestCcerMonth).map((month
 });
 const carbonPriceComparison = {
   ccerDataThrough: tradeDataThrough,
-  ceaDataThrough: ceaQuality.summary?.last_data_date || "",
+  ceaDataThrough: freshCeaComparison
+    ? ceaQuality?.summary?.last_data_date || ""
+    : previousDashboard?.carbonPriceComparison?.ceaDataThrough || "",
+  ceaComparisonStatus: freshCeaComparison ? "fresh" : "last_validated_snapshot",
   months: carbonPriceMonths,
 };
 
