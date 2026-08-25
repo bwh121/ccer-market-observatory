@@ -356,7 +356,7 @@ a {
 
 .market-pulse-grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -2325,7 +2325,7 @@ tbody tr:hover td {
   .site-header nav { width: 100%; gap: 12px; }
   .kpi-grid.six { grid-template-columns: repeat(3, 1fr); }
   .method-card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .market-pulse-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .market-pulse-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); }
   .market-pulse .kpi-label { font-size: 11px; }
   .hero { min-height: auto; }
   .account-header-status span { max-width: 90px; }
@@ -2613,7 +2613,7 @@ tbody tr:hover td {
 }
 
 .cea-market-pulse .kpi-value { font-size: clamp(20px, 1.85vw, 29px); }
-.cea-market-pulse .kpi-note { font-size: 9px; }
+.cea-market-pulse .kpi-note { font-size: 9px; white-space: normal; line-height: 1.25; }
 
 .kpi-card-has-tooltip { position: relative; cursor: help; }
 
@@ -2774,7 +2774,7 @@ tbody tr:hover td {
 
 .cea-coverage-grid .panel,
 .cea-coverage-panel {
-  min-height: 510px;
+  min-height: 540px;
 }
 
 .cea-coverage-map,
@@ -2783,7 +2783,7 @@ tbody tr:hover td {
 }
 
 .cea-coverage-map {
-  height: 420px;
+  height: 455px;
 }
 
 .cea-fulfillment-grid { align-items: stretch; }

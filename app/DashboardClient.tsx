@@ -2848,6 +2848,13 @@ export default function DashboardClient() {
               note="累计成交额 ÷ 累计成交量"
               tone="rust"
             />
+            <KpiCard
+              label="最新收盘价"
+              value={exactNumber(data.tradeSummary.latestPrice || 0, 2)}
+              unit="元/吨"
+              note={data.tradeSummary.latestDate}
+              tone="ink"
+            />
           </div>
         </section>
 

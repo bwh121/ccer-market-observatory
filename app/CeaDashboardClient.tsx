@@ -469,6 +469,7 @@ export default function CeaDashboardClient() {
   const [data, setData] = useState<CeaDashboardData | null>(null);
   const [error, setError] = useState("");
   const [mapReady, setMapReady] = useState(false);
+  const [mapProvinceNames, setMapProvinceNames] = useState<string[]>([]);
 
   useEffect(() => {
     Promise.all([
@@ -483,6 +484,11 @@ export default function CeaDashboardClient() {
     ])
       .then(([payload, chinaMap]: [CeaDashboardData, unknown]) => {
         echarts.registerMap("china-cea", chinaMap as never);
+        setMapProvinceNames(
+          ((chinaMap as { features?: { properties?: { name?: string } }[] }).features || [])
+            .map((feature) => feature.properties?.name || "")
+            .filter(Boolean),
+        );
         setData(payload);
         setMapReady(true);
       })
@@ -491,10 +497,10 @@ export default function CeaDashboardClient() {
 
   if (error) return <div className="loading-screen">CEA 页面暂时无法载入：{error}</div>;
   if (!data) return <div className="loading-screen">正在装载强制碳市场数据…</div>;
-  return <CeaDashboardReady data={data} mapReady={mapReady} />;
+  return <CeaDashboardReady data={data} mapReady={mapReady} mapProvinceNames={mapProvinceNames} />;
 }
 
-function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapReady: boolean }) {
+function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDashboardData; mapReady: boolean; mapProvinceNames: string[] }) {
   const [subject, setSubject] = useState("COMCEA");
   const [priceView, setPriceView] = useState<"kline" | "close">("kline");
   const [coverageYear, setCoverageYear] = useState("2026");
@@ -638,7 +644,7 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
       { type: "value", name: "成交量（吨）", position: "right", splitNumber: 4, max: (value: { max: number }) => value.max > 0 ? Math.ceil((value.max * 1.25) / 1_000_000) * 1_000_000 : 1, axisLine, axisLabel: { ...axisLabel, formatter: (value: number) => compactVolumeAxis(value) }, splitLine: { show: false } },
     ],
     dataZoom: [
-      { type: "slider", xAxisIndex: [0, 1], start: 0, end: 100, filterMode: "none", bottom: 2, height: 20, showDataShadow: false, brushSelect: false },
+      { type: "slider", xAxisIndex: [0, 1], start: 0, end: 100, filterMode: "filter", bottom: 2, height: 20, showDataShadow: false, brushSelect: false },
     ],
     series: [
       ...(priceView === "kline" ? [{
@@ -647,9 +653,8 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
         xAxisIndex: 0,
         yAxisIndex: 0,
         z: 5,
-        barWidth: "97%",
-        barMinWidth: 2,
-        barMaxWidth: 24,
+        barWidth: "92%",
+        barMinWidth: 1,
         data: chartRows.map((row) => isCompletePrice(row) && row.totalVolume > 0 ? [row.open, row.close, row.low, row.high] : ["-", "-", "-", "-"]),
         itemStyle: { color: "#b5523b", color0: "#2f7d68", borderColor: "#b5523b", borderColor0: "#2f7d68" },
       }] : [{
@@ -918,15 +923,28 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
   const coverageRows = coverageIndustryFilter
     ? (data.coverage.provinceIndustryYear || []).filter((row) => row.year === coverageYear && row.industry === coverageIndustryFilter)
     : data.coverage.provinceYear.filter((row) => row.year === coverageYear);
+  const coverageMapData = useMemo(() => {
+    const byProvince = new Map<string, number>();
+    coverageRows.forEach((row) => {
+      if (row.province !== "未披露") byProvince.set(provinceMapName(row.province), row.records);
+    });
+    const maxValue = Math.max(1, ...byProvince.values());
+    const colors = ["#ffffff", "#dceee9", "#a9d2c8", "#61a99b", "#147d70", "#0b4f4a"];
+    const names = mapProvinceNames.length ? mapProvinceNames : [...byProvince.keys()];
+    return names.map((name) => {
+      const value = byProvince.get(name) || 0;
+      const colorIndex = value === 0 ? 0 : Math.max(1, Math.ceil((value / maxValue) * (colors.length - 1)));
+      return { name, value, itemStyle: { areaColor: colors[colorIndex] } };
+    });
+  }, [coverageRows, mapProvinceNames]);
   const coverageMapOption = useMemo<EChartsOption>(() => ({
     animation: false,
     tooltip: { trigger: "item", formatter: (params) => {
       const item = Array.isArray(params) ? params[0] : params;
       return `${item?.name || ""}<br/>公开记录：${exactNumber(Number(item?.value) || 0)} 条<br/><small>点击查看企业</small>`;
     } },
-    visualMap: { min: 0, max: Math.max(...coverageRows.map((row) => row.records), 1), left: 8, bottom: 8, calculable: true, text: ["多", "少"], inRange: { color: ["#edf3f0", "#9cc4ba", "#147d70", "#0b514b"] }, textStyle: axisLabel },
-    series: [{ name: "重点排放单位", type: "map", map: "china-cea", nameProperty: "name", roam: false, selectedMode: false, data: coverageRows.filter((row) => row.province !== "未披露").map((row) => ({ name: provinceMapName(row.province), value: row.records })), itemStyle: { areaColor: "#edf3f0", borderColor: "#f3f5f1", borderWidth: 1 }, emphasis: { label: { color: "#14211f" }, itemStyle: { areaColor: "#d6a35d" } } }],
-  }), [coverageRows]);
+    series: [{ name: "重点排放单位", type: "map", map: "china-cea", roam: false, zoom: 1.06, left: 6, right: 6, top: 6, bottom: 6, selectedMode: false, data: coverageMapData, label: { show: false }, itemStyle: { areaColor: "#ffffff", borderColor: "#a5b8b4", borderWidth: 0.7 }, emphasis: { label: { show: true, color: "#14211f" }, itemStyle: { areaColor: "#d6a35d" } } }],
+  }), [coverageMapData]);
 
   const coverageIndustryOption = useMemo<EChartsOption>(() => ({
     animation: false,
@@ -951,7 +969,7 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
       { name: "按期履约", type: "bar", stack: "fulfillment", barWidth: "48%", data: data.participants.fulfillmentYearStats.map((row) => row.onTime), itemStyle: { color: "#147d70" } },
       { name: "逾期履约", type: "bar", stack: "fulfillment", barWidth: "48%", data: data.participants.fulfillmentYearStats.map((row) => row.overdue), itemStyle: { color: "#ba8744" } },
       { name: "未履约", type: "bar", stack: "fulfillment", barWidth: "48%", data: data.participants.fulfillmentYearStats.map((row) => row.incomplete), itemStyle: { color: "#9b4d5b" } },
-      { name: "按期履约率", type: "line", yAxisIndex: 1, data: data.participants.fulfillmentYearStats.map((row) => row.records ? Number((row.onTime / row.records * 100).toFixed(1)) : null), symbolSize: 7, lineStyle: { width: 2.3, color: "#1f5f8b" }, itemStyle: { color: "#1f5f8b" } },
+      { name: "按期履约率", type: "line", yAxisIndex: 1, data: data.participants.fulfillmentYearStats.map((row) => row.records ? Number((row.onTime / row.records * 100).toFixed(1)) : null), symbolSize: 7, lineStyle: { width: 2.3, color: "#1f5f8b" }, itemStyle: { color: "#1f5f8b" }, label: { show: true, position: "top", formatter: (params: { value?: unknown }) => params.value == null ? "" : `${Number(params.value).toFixed(1)}%`, color: "#1f5f8b", fontSize: 10, fontWeight: 700 } },
     ],
   }), [data.participants.fulfillmentYearStats]);
 
@@ -1166,7 +1184,7 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
           <div className="market-pulse-grid">
             <KpiCard label="覆盖行业数量" value="4" unit="个" note="发电、钢铁、水泥、铝冶炼" tone="ink" />
             <KpiCard label="覆盖温室气体" value={exactNumber(data.officialCoverage.gases.length)} unit="种" note="CO₂ · CF₄ · C₂F₆" />
-            <KpiCard label="配额管理重点排放单位" value={exactNumber(data.officialCoverage.managedEntities)} unit="家" note="2025年官方口径" tooltip={data.officialCoverage.sectorCounts.map((row) => `${row.sector} ${exactNumber(row.count)} 家`).join(" · ")} tone="ink" />
+            <KpiCard label="配额管理重点排放单位" value={exactNumber(data.officialCoverage.managedEntities)} unit="家" note={data.officialCoverage.sectorCounts.map((row) => `${row.sector}${exactNumber(row.count)}家`).join(" · ")} tone="ink" />
             <KpiCard label="覆盖全国二氧化碳排放" value="约80亿吨" note="占全国总量的60%以上" tone="blue" />
             <KpiCard label="累计成交量" value={compactNumber(data.marketSummary.cumulativeVolume)} unit="吨" note={exactNumber(data.marketSummary.cumulativeVolume)} />
             <KpiCard label="累计成交额" value={compactNumber(data.marketSummary.cumulativeAmount)} unit="元" note={exactNumber(data.marketSummary.cumulativeAmount, 2)} tone="blue" />
@@ -1190,8 +1208,8 @@ function CeaDashboardReady({ data, mapReady }: { data: CeaDashboardData; mapRead
 
           <div className="two-column-grid cea-fulfillment-grid">
             <article className="panel">
-              <PanelTitle label="FIGURE 03" title="履约状态年度结构" note="堆积柱为公开记录，折线为按期履约率；状态标志可能重叠，保留原值。" />
-              <EChart option={fulfillmentOption} className="trend-chart cea-mid-chart" ariaLabel="全国碳市场履约状态年度堆积柱状图及按期履约率" exportTitle="履约状态年度结构" exportFileName="FIGURE-03-履约状态年度结构" exportSections={exportSection("年度履约状态", data.participants.fulfillmentYearStats.map((row) => ({ 年度: row.year, 公开记录: row.records, 按期履约: row.onTime, 按期履约率: row.records ? row.onTime / row.records : null, 逾期履约: row.overdue, 未履约: row.incomplete })))} />
+              <PanelTitle label="FIGURE 03" title="各年度履约情况" note="堆积柱为公开记录，折线为按期履约率；状态标志可能重叠，保留原值。" />
+              <EChart option={fulfillmentOption} className="trend-chart cea-mid-chart" ariaLabel="全国碳市场各年度履约情况及按期履约率" exportTitle="各年度履约情况" exportFileName="FIGURE-03-各年度履约情况" exportSections={exportSection("年度履约状态", data.participants.fulfillmentYearStats.map((row) => ({ 年度: row.year, 公开记录: row.records, 按期履约: row.onTime, 按期履约率: row.records ? row.onTime / row.records : null, 逾期履约: row.overdue, 未履约: row.incomplete })))} />
             </article>
             <div className="cea-fulfillment-spacer" aria-hidden="true" />
           </div>
