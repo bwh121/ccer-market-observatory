@@ -218,6 +218,8 @@ type DrawerState = {
   targets?: VerificationTarget[];
   passRates?: { year: string; industry: string; passRate: number | null; targetCount: number; pdfUrl: string }[];
   auditInstitutions?: { year: string; name: string; province: string; city: string; industry: string; uscc: string; passRate: number | null; volume: number }[];
+  concentration?: { rank: number; institution: string; volume: number; share: number }[];
+  footprintMap?: { name: string; value: number; itemStyle: { areaColor: string } }[];
 };
 
 const METHOD_COLORS: Record<string, string> = {
@@ -371,7 +373,7 @@ function SelectControl({
   );
 }
 
-function CeaDrawer({ state, onClose }: { state: DrawerState | null; onClose: () => void }) {
+function CeaDrawer({ state, onClose, mapReady }: { state: DrawerState | null; onClose: () => void; mapReady: boolean }) {
   useEffect(() => {
     if (!state) return;
     const handleKey = (event: KeyboardEvent) => {
@@ -380,6 +382,29 @@ function CeaDrawer({ state, onClose }: { state: DrawerState | null; onClose: () 
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [state, onClose]);
+  const concentrationOption = useMemo<EChartsOption>(() => {
+    const rows = state?.concentration || [];
+    return {
+      animation: false,
+      tooltip: { trigger: "axis", formatter: (params: unknown) => {
+        const first = (Array.isArray(params) ? params[0] : params) as { dataIndex?: number };
+        const row = rows[first?.dataIndex || 0];
+        return row ? `前${row.rank}家技术服务机构<br/>累计市场占有率：${row.share.toFixed(1)}%<br/>第${row.rank}家：${row.institution}<br/>业务量：${exactNumber(row.volume)}家` : "";
+      } },
+      grid: { left: 54, right: 22, top: 30, bottom: 40 },
+      xAxis: { type: "category", name: "机构数量", data: rows.map((row) => row.rank), axisLine, axisLabel: { ...axisLabel, interval: 0, hideOverlap: true } },
+      yAxis: { type: "value", name: "累计市场占有率", min: 0, max: 100, axisLine, axisLabel: { ...axisLabel, formatter: (value: number) => `${value}%` }, splitLine },
+      series: [{ name: "累计市场占有率", type: "line", data: rows.map((row) => Number(row.share.toFixed(2))), showSymbol: rows.length <= 24, symbolSize: 5, lineStyle: { width: 2.4, color: "#9b4d5b" }, itemStyle: { color: "#9b4d5b" }, areaStyle: { color: "rgba(155,77,91,0.10)" } }],
+    };
+  }, [state?.concentration]);
+  const footprintMapOption = useMemo<EChartsOption>(() => ({
+    animation: false,
+    tooltip: { trigger: "item", formatter: (params: unknown) => {
+      const item = Array.isArray(params) ? params[0] : params as { name?: string; value?: number };
+      return `${item?.name || ""}<br/>服务重点排放单位：${exactNumber(Number(item?.value) || 0)} 家`;
+    } },
+    series: [{ name: "业务量", type: "map", map: "china-cea", roam: false, zoom: 0.92, left: 10, right: 10, top: 10, bottom: 10, selectedMode: false, data: state?.footprintMap || [], label: { show: false }, itemStyle: { areaColor: "#ffffff", borderColor: "#a5b8b4", borderWidth: 0.7 }, emphasis: { label: { show: true, color: "#14211f" }, itemStyle: { areaColor: "#d6a35d" } } }],
+  }), [state?.footprintMap]);
   if (!state) return null;
   return (
     <div className="drawer-layer" role="presentation" onMouseDown={onClose}>
@@ -403,6 +428,18 @@ function CeaDrawer({ state, onClose }: { state: DrawerState | null; onClose: () 
               </div>
             ))}
           </dl>
+          {state.concentration?.length ? (
+            <div className="cea-related-records">
+              <h3>机构业务累计市场占有率</h3>
+              <EChart option={concentrationOption} className="cea-drawer-chart" ariaLabel="技术服务机构累计市场占有率折线图" />
+            </div>
+          ) : null}
+          {state.footprintMap?.length ? (
+            <div className="cea-related-records">
+              <h3>全国业务布局</h3>
+              {mapReady ? <EChart option={footprintMapOption} className="map-chart cea-drawer-map" ariaLabel="技术服务机构全国业务布局地图" /> : <div className="chart-placeholder">地图加载中…</div>}
+            </div>
+          ) : null}
           {state.targets?.length ? (
             <div className="cea-related-records cea-verification-targets">
               <h3>服务的重点排放单位 <span>{exactNumber(state.targets.length)} 家</span></h3>
@@ -831,6 +868,12 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
       const amount = rows.reduce((total, row) => total + row.totalAmount, 0);
       return { subject: item.code, volume, amount, averagePrice: volume > 0 ? amount / volume : null };
     });
+  const subjectCloseTrend = useMemo(() => {
+    const subjects = data.subjects.filter((item) => item.code !== "COMCEA");
+    const rows = data.daily.filter((row) => row.subject !== "COMCEA" && (structurePeriod === "all" || row.date.startsWith(structurePeriod)) && row.close != null && row.totalVolume > 0);
+    const dates = [...new Set(rows.map((row) => row.date))].sort();
+    return { subjects, rows, dates };
+  }, [data.daily, data.subjects, structurePeriod]);
 
   const methodStructureOption = useMemo<EChartsOption>(() => ({
     animation: false,
@@ -889,6 +932,29 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
     };
   }, [subjectPriceStructure]);
 
+  const subjectCloseTrendOption = useMemo<EChartsOption>(() => ({
+    animation: false,
+    tooltip: { trigger: "axis" },
+    legend: { type: "scroll", top: 2, textStyle: axisLabel },
+    grid: { left: 52, right: 20, top: 54, bottom: 42 },
+    xAxis: {
+      type: "category",
+      data: subjectCloseTrend.dates,
+      axisLine,
+      axisTick: { show: false },
+      axisLabel: { ...axisLabel, interval: 0, hideOverlap: true, formatter: (value: string, index: number) => {
+        const month = value.slice(0, 7);
+        const previousMonth = subjectCloseTrend.dates[index - 1]?.slice(0, 7);
+        return index === 0 || month !== previousMonth ? `${Number(value.slice(5, 7))}月` : "";
+      } },
+    },
+    yAxis: { type: "value", name: "收盘价/元·吨⁻¹", scale: true, axisLine, axisLabel, splitLine },
+    series: subjectCloseTrend.subjects.map((item) => {
+      const closeByDate = new Map(subjectCloseTrend.rows.filter((row) => row.subject === item.code).map((row) => [row.date, row.close]));
+      return { name: item.code, type: "line", data: subjectCloseTrend.dates.map((date) => closeByDate.get(date) ?? null), showSymbol: false, connectNulls: true, lineStyle: { width: 2, color: SUBJECT_COLORS[item.code] }, itemStyle: { color: SUBJECT_COLORS[item.code] } };
+    }),
+  }), [subjectCloseTrend]);
+
   const priceComparisonOption = useMemo<EChartsOption>(() => {
     const spreads = data.priceComparison.map((row) => row.spreadRatio == null ? null : row.spreadRatio * 100).filter((value): value is number => value != null);
     const low = spreads.length ? Math.min(0, ...spreads) : 0;
@@ -943,7 +1009,7 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
       const item = Array.isArray(params) ? params[0] : params;
       return `${item?.name || ""}<br/>公开记录：${exactNumber(Number(item?.value) || 0)} 条<br/><small>点击查看企业</small>`;
     } },
-    series: [{ name: "重点排放单位", type: "map", map: "china-cea", roam: false, zoom: 1.06, left: 6, right: 6, top: 6, bottom: 6, selectedMode: false, data: coverageMapData, label: { show: false }, itemStyle: { areaColor: "#ffffff", borderColor: "#a5b8b4", borderWidth: 0.7 }, emphasis: { label: { show: true, color: "#14211f" }, itemStyle: { areaColor: "#d6a35d" } } }],
+    series: [{ name: "重点排放单位", type: "map", map: "china-cea", roam: false, zoom: 0.94, left: 12, right: 12, top: 12, bottom: 12, selectedMode: false, data: coverageMapData, label: { show: false }, itemStyle: { areaColor: "#ffffff", borderColor: "#a5b8b4", borderWidth: 0.7 }, emphasis: { label: { show: true, color: "#14211f" }, itemStyle: { areaColor: "#d6a35d" } } }],
   }), [coverageMapData]);
 
   const coverageIndustryOption = useMemo<EChartsOption>(() => ({
@@ -1020,15 +1086,34 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
   }, [footprintRows]);
   const shownFootprintStats = footprintLimit === "all" ? footprintStats : footprintStats.slice(0, Number(footprintLimit));
   const footprintProvinces = [...new Set(shownFootprintStats.flatMap((row) => [...row.provinces.keys()]))].sort((a, b) => shownFootprintStats.reduce((sum, row) => sum + (row.provinces.get(b) || 0) - (row.provinces.get(a) || 0), 0));
+  const footprintCumulativeShare = useMemo(() => {
+    const total = footprintRows.length;
+    return shownFootprintStats.map((_, index) => (
+      total
+        ? shownFootprintStats.slice(0, index + 1).reduce((sum, row) => sum + row.total, 0) / total * 100
+        : 0
+    ));
+  }, [footprintRows.length, shownFootprintStats]);
   const institutionFootprintOption = useMemo<EChartsOption>(() => ({
     animation: false,
-    tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
+    tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, formatter: (params: unknown) => {
+      const first = (Array.isArray(params) ? params[0] : params) as { dataIndex?: number };
+      const index = first?.dataIndex || 0;
+      const row = shownFootprintStats[index];
+      return row ? `<strong>${row.name}</strong><br/>业务量：${exactNumber(row.total)} 家<br/>累计市场占有率：${footprintCumulativeShare[index].toFixed(1)}%<br/><small>点击查看全国业务布局</small>` : "";
+    } },
     legend: { type: "scroll", top: 2, textStyle: axisLabel },
-    grid: { left: 64, right: 24, top: 52, bottom: 100 },
+    grid: { left: 64, right: 60, top: 52, bottom: 100 },
     xAxis: { type: "category", data: shownFootprintStats.map((row) => row.name), axisLine, axisTick: { show: false }, axisLabel: { ...axisLabel, interval: 0, rotate: 38, hideOverlap: true } },
-    yAxis: { type: "value", name: "服务重点排放单位/家", axisLine, axisLabel: { ...axisLabel, formatter: (value: number) => compactNumber(value, 0) }, splitLine },
-    series: footprintProvinces.map((province, index) => ({ name: province, type: "bar", stack: "business", barMaxWidth: 34, data: shownFootprintStats.map((row) => row.provinces.get(province) || 0), itemStyle: { color: ["#147d70", "#1f5f8b", "#ba8744", "#9b4d5b", "#657b75", "#704b86", "#5f9ea0", "#b07255"][index % 8] } })),
-  }), [footprintProvinces, shownFootprintStats]);
+    yAxis: [
+      { type: "value", name: "服务重点排放单位/家", axisLine, axisLabel: { ...axisLabel, formatter: (value: number) => compactNumber(value, 0) }, splitLine },
+      { type: "value", name: "累计市场占有率", min: 0, max: 100, position: "right", axisLine, axisLabel: { ...axisLabel, formatter: (value: number) => `${value}%` }, splitLine: { show: false } },
+    ],
+    series: [
+      ...footprintProvinces.map((province, index) => ({ name: province, type: "bar" as const, stack: "business", barMaxWidth: 34, data: shownFootprintStats.map((row) => row.provinces.get(province) || 0), itemStyle: { color: ["#147d70", "#1f5f8b", "#ba8744", "#9b4d5b", "#657b75", "#704b86", "#5f9ea0", "#b07255"][index % 8] } })),
+      { name: "累计市场占有率", type: "line", yAxisIndex: 1, data: footprintCumulativeShare.map((value) => Number(value.toFixed(2))), showSymbol: false, lineStyle: { width: 2.4, color: "#14211f" }, itemStyle: { color: "#14211f" } },
+    ],
+  }), [footprintCumulativeShare, footprintProvinces, shownFootprintStats]);
 
   const participantRows = participantMode === "enterprise" ? participants?.keyEmitters || [] : participants?.verificationInstitutions || [];
   const participantYears = [...new Set(participantRows.map((row) => row.year))].sort().reverse();
@@ -1118,13 +1203,16 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
     const directory = participants || await loadParticipants();
     const rows = auditRows.filter((row) => row.targetProvince === province);
     const grouped = new Map<string, VerificationTarget[]>();
-    rows.forEach((row) => grouped.set(row.verificationId, [...(grouped.get(row.verificationId) || []), row]));
-    const auditInstitutions = [...grouped.entries()].map(([verificationId, institutionRows]) => {
+    rows.forEach((row) => {
+      const key = `${row.institutionName}|${row.institutionUscc}`;
+      grouped.set(key, [...(grouped.get(key) || []), row]);
+    });
+    const auditInstitutions = [...grouped.entries()].map(([, institutionRows]) => {
       const relation = institutionRows[0];
-      const institution = directory?.verificationInstitutions.find((item) => item.id === verificationId);
-      const detail = data.participants.verificationDetails.find((item) => item.verification_list_id === verificationId);
+      const institution = directory?.verificationInstitutions.find((item) => item.id === relation.verificationId);
+      const detail = data.participants.verificationDetails.find((item) => item.verification_list_id === relation.verificationId);
       return {
-        year: relation.year,
+        year: auditYear || "全部年度",
         name: relation.institutionName,
         province: institution?.province || relation.institutionProvince || "待补充",
         city: institution?.city || "",
@@ -1134,6 +1222,11 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
         volume: institutionRows.length,
       };
     }).sort((a, b) => b.volume - a.volume || a.name.localeCompare(b.name, "zh-CN"));
+    let cumulativeVolume = 0;
+    const concentration = auditInstitutions.map((row, index) => {
+      cumulativeVolume += row.volume;
+      return { rank: index + 1, institution: row.name, volume: row.volume, share: rows.length ? cumulativeVolume / rows.length * 100 : 0 };
+    });
     setDrawer({
       eyebrow: "VERIFICATION MARKET",
       title: `${province}核查服务机构`,
@@ -1144,6 +1237,28 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
         { label: "本地机构占比", value: percent(rows.length ? rows.filter((row) => row.isLocal).length / rows.length : null, 1) },
       ],
       auditInstitutions,
+      concentration,
+    });
+  };
+
+  const openFootprintInstitution = (row: { name: string; uscc: string; total: number; provinces: Map<string, number> }) => {
+    const maxValue = Math.max(1, ...row.provinces.values());
+    const colors = ["#ffffff", "#dceee9", "#a9d2c8", "#61a99b", "#147d70", "#0b4f4a"];
+    const footprintMap = [...row.provinces.entries()].map(([province, value]) => {
+      const colorIndex = Math.max(1, Math.ceil((value / maxValue) * (colors.length - 1)));
+      return { name: provinceMapName(province), value, itemStyle: { areaColor: colors[colorIndex] } };
+    });
+    setDrawer({
+      eyebrow: "INSTITUTION FOOTPRINT",
+      title: `${row.name}业务布局`,
+      description: `${footprintYear ? `${footprintYear}年` : "全部年度"}公开PDF关系数据；地图按该机构服务重点排放单位数量着色。`,
+      fields: [
+        { label: "技术服务机构", value: row.name },
+        { label: "统一社会信用代码", value: row.uscc || "待补充" },
+        { label: "服务重点排放单位", value: `${exactNumber(row.total)} 家` },
+        { label: "覆盖省份", value: `${exactNumber(row.provinces.size)} 个` },
+      ],
+      footprintMap,
     });
   };
 
@@ -1266,6 +1381,7 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
               <div className="cea-structure-pair-grid">
                 <article className="panel"><PanelTitle label="FIGURE 10C" title="配额规格成交量占比" /><EChart option={subjectStructureOption} className="cea-structure-chart" ariaLabel="各CEA配额规格成交量占比" exportTitle="配额规格成交量占比" exportFileName={`FIGURE-10C-${structurePeriod}-配额规格成交量占比`} exportSections={exportSection("配额规格结构", subjectStructure.map((row) => ({ 配额规格: row.subject, 成交量: row.volume })))} /></article>
                 <article className="panel"><PanelTitle label="FIGURE 10D" title="配额规格成交均价" note="该周期内无成交时标注“无成交”。" /><EChart option={subjectPriceStructureOption} className="cea-structure-chart" ariaLabel="各CEA配额规格成交均价" exportTitle="配额规格成交均价" exportFileName={`FIGURE-10D-${structurePeriod}-配额规格成交均价`} exportSections={exportSection("配额规格成交均价", subjectPriceStructure.map((row) => ({ 配额规格: row.subject, 成交量: row.volume, 成交额: row.amount, 成交均价: row.averagePrice == null ? "无成交" : row.averagePrice })))} /></article>
+                <article className="panel"><PanelTitle label="FIGURE 10E" title="不同规格CEA收盘价走势" note="各规格收盘价；横轴仅标注月份。" /><EChart option={subjectCloseTrendOption} className="cea-structure-chart" ariaLabel="不同规格CEA收盘价走势" exportTitle="不同规格CEA收盘价走势" exportFileName={`FIGURE-10E-${structurePeriod}-不同规格CEA收盘价走势`} exportSections={exportSection("规格收盘价", subjectCloseTrend.rows.map((row) => ({ 日期: row.date, 配额规格: row.subject, 收盘价: row.close, 成交量: row.totalVolume })))} /></article>
               </div>
             </div>
           </div>
@@ -1321,8 +1437,8 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
             <EChart option={auditStructureOption} className="cea-participant-chart cea-wide-participant-chart" ariaLabel="各省份本地与外地技术服务机构业务占比及CR5" exportTitle="各地区核查业务的本地与外地机构分配" exportFileName={`FIGURE-12-${auditYear || "全部年度"}-核查机构结构`} exportSections={exportSection("核查关系", auditRows.map((row) => ({ 年度: row.year, 被核查单位省份: row.targetProvince, 核查机构: row.institutionName, 机构省份: row.institutionProvince, 本地机构: row.isLocal ? "是" : "否", 被核查单位: row.targetName })))} onClick={(params) => { const province = String(params.name || ""); if (province) void openAuditProvince(province); }} />
           </article>
           <article className="panel cea-full-width-panel">
-            <PanelTitle label="FIGURE 13" title="技术服务机构跨省业务分布" note="柱子为各机构服务的重点排放单位数量，堆积颜色表示被核查单位所在省份；机构按业务量降序排列。" badge={relationshipBadge} controls={<div className="cea-filter-controls"><SelectControl label="年度" value={footprintYear} onChange={setFootprintYear} options={[{ value: "", label: "全部年度" }, ...yearOptions.slice().reverse()]} /><SelectControl label="技术服务机构" value={footprintLimit} onChange={setFootprintLimit} options={[{ value: "20", label: "TOP20" }, { value: "50", label: "TOP50" }, { value: "100", label: "TOP100" }, { value: "all", label: "全部" }]} /></div>} />
-            <EChart option={institutionFootprintOption} className="cea-participant-chart cea-wide-participant-chart" ariaLabel="技术服务机构跨省业务分布堆积柱状图" exportTitle="技术服务机构跨省业务分布" exportFileName={`FIGURE-13-${footprintYear || "全部年度"}-${footprintLimit}-技术服务机构业务分布`} exportSections={exportSection("机构业务版图", footprintRows.map((row) => ({ 年度: row.year, 技术服务机构: row.institutionName, 被核查单位省份: row.targetProvince, 被核查单位: row.targetName, 行业: row.industry })))} />
+            <PanelTitle label="FIGURE 13" title="技术服务机构业务量情况" note="柱子为各机构服务的重点排放单位数量，堆积颜色表示被核查单位所在省份；右轴折线为累计市场占有率。点击柱子查看全国业务布局。" badge={relationshipBadge} controls={<div className="cea-filter-controls"><SelectControl label="年度" value={footprintYear} onChange={setFootprintYear} options={[{ value: "", label: "全部年度" }, ...yearOptions.slice().reverse()]} /><SelectControl label="技术服务机构" value={footprintLimit} onChange={setFootprintLimit} options={[{ value: "20", label: "TOP20" }, { value: "50", label: "TOP50" }, { value: "100", label: "TOP100" }, { value: "all", label: "全部" }]} /></div>} />
+            <EChart option={institutionFootprintOption} className="cea-participant-chart cea-wide-participant-chart" ariaLabel="技术服务机构业务量及累计市场占有率" exportTitle="技术服务机构业务量情况" exportFileName={`FIGURE-13-${footprintYear || "全部年度"}-${footprintLimit}-技术服务机构业务量情况`} exportSections={exportSection("机构业务版图", footprintRows.map((row) => ({ 年度: row.year, 技术服务机构: row.institutionName, 被核查单位省份: row.targetProvince, 被核查单位: row.targetName, 行业: row.industry })))} onClick={(params) => { const index = Number(params.dataIndex); const row = shownFootprintStats[index]; if (row) openFootprintInstitution(row); }} />
           </article>
         </section>
 
@@ -1366,7 +1482,7 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
         <span className="footer-snapshot">数据快照：{data.generatedAt.replace("T", " ").slice(0, 19)}</span>
       </footer>
 
-      <CeaDrawer state={drawer} onClose={() => setDrawer(null)} />
+      <CeaDrawer state={drawer} onClose={() => setDrawer(null)} mapReady={mapReady} />
     </>
   );
 }

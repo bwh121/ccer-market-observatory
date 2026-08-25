@@ -38,7 +38,7 @@ test("derives the latest bulletin reporting periods", () => {
     empty: false,
   });
   assert.deepEqual(bulletinPeriodRange("2026-08-09", "month"), {
-    start: "2026-08-03",
+    start: "2026-08-01",
     end: "2026-08-08",
     empty: false,
   });
@@ -48,16 +48,17 @@ test("derives the latest bulletin reporting periods", () => {
     empty: true,
   });
   assert.deepEqual(bulletinPeriodRange("2026-09-01", "month"), {
-    start: "2026-08-31",
+    start: "2026-09-01",
     end: "2026-08-31",
-    empty: false,
+    empty: true,
   });
   assert.equal(bulletinPeriodLabel("2026-08-10", "week"), "本周数据暂未更新");
   assert.equal(bulletinPeriodLabel("2026-08-11", "week"), "统计区间：2026-08-10日至2026-08-10日");
-  assert.equal(bulletinPeriodLabel("2026-09-01", "month"), "统计区间：2026-08-31日至2026-08-31日");
-  assert.equal(bulletinPeriodLabel("2026-09-02", "month"), "统计区间：2026-08-31日至2026-09-01日");
+  assert.equal(bulletinPeriodLabel("2026-09-01", "month"), "本月数据暂未更新");
+  assert.equal(bulletinPeriodLabel("2026-09-02", "month"), "统计区间：2026-09-01日至2026-09-01日");
   assert.equal(bulletinPeriodLabel("2026-08-20", "week"), "统计区间：2026-08-17日至2026-08-19日");
-  assert.equal(bulletinPeriodLabel("2026-08-20", "month"), "统计区间：2026-08-17日至2026-08-19日");
+  assert.equal(bulletinPeriodLabel("2026-08-20", "month"), "统计区间：2026-08-01日至2026-08-19日");
+  assert.equal(bulletinPeriodLabel("2026-08-25", "month"), "统计区间：2026-08-01日至2026-08-24日");
 });
 
 async function render() {
@@ -380,6 +381,10 @@ test("adds a separate CEA view without replacing the CCER dashboard", async () =
   assert.match(ceaSource, /CEA—CCER月度价格比较/);
   assert.match(ceaSource, /本地与外地机构分配/);
   assert.match(ceaSource, /服务的重点排放单位/);
+  assert.match(ceaSource, /label="FIGURE 10E" title="不同规格CEA收盘价走势"/);
+  assert.match(ceaSource, /累计市场占有率/);
+  assert.match(ceaSource, /openFootprintInstitution/);
+  assert.match(ceaSource, /title="技术服务机构业务量情况"/);
   assert.match(ceaSource, /tradeCalendarText/);
   assert.doesNotMatch(ceaSource, /1,227个预期交易日/);
   assert.doesNotMatch(ceaSource, /PUBLIC LIST SNAPSHOT/);

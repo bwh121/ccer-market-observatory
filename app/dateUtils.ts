@@ -16,6 +16,10 @@ export type BulletinPeriod = "yesterday" | "week" | "month";
 export const bulletinPeriodRange = (snapshotDate: string, period: BulletinPeriod) => {
   const previousDay = shiftDate(snapshotDate, -1);
   if (period === "yesterday") return { start: previousDay, end: previousDay, empty: false };
+  if (period === "month") {
+    const start = `${snapshotDate.slice(0, 7)}-01`;
+    return { start, end: previousDay, empty: previousDay < start };
+  }
   const value = new Date(`${snapshotDate}T00:00:00Z`);
   const weekday = value.getUTCDay() || 7;
   const start = shiftDate(snapshotDate, -(weekday - 1));

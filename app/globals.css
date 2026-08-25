@@ -2783,7 +2783,7 @@ tbody tr:hover td {
 }
 
 .cea-coverage-map {
-  height: 455px;
+  height: 438px;
 }
 
 .cea-fulfillment-grid { align-items: stretch; }
@@ -3123,7 +3123,7 @@ tbody tr:hover td {
 
 .cea-structure-pairs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 14px;
   margin: 14px 0;
 }
@@ -3161,6 +3161,13 @@ tbody tr:hover td {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
+
+.cea-structure-pair.is-subject .cea-structure-pair-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cea-drawer-chart { height: 260px; }
+.cea-drawer-map { height: 320px; }
 
 .cea-wide-participant-chart { height: 440px; }
 
@@ -3272,7 +3279,8 @@ tbody tr:hover td {
   .coverage-fact-grid,
   .cea-three-column-grid { grid-template-columns: 1fr; }
   .cea-three-column-grid > :last-child { grid-column: auto; }
-  .cea-structure-pair-grid { grid-template-columns: 1fr; }
+  .cea-structure-pair-grid,
+  .cea-structure-pair.is-subject .cea-structure-pair-grid { grid-template-columns: 1fr; }
   .cea-coverage-grid,
   .cea-trade-grid,
   .cea-participant-grid { grid-template-columns: 1fr; }
