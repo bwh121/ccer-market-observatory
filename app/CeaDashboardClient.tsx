@@ -1115,6 +1115,125 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
     ],
   }), [footprintCumulativeShare, footprintProvinces, shownFootprintStats]);
 
+  // All national concentration figures use the same published institution–emitter
+  // relationship as FIGURE 12 and FIGURE 13. The first observed year is derived
+  // from the data, so a newly published annual list automatically extends the charts.
+  const nationalAuditEvolution = useMemo(() => {
+    const byYear = new Map<string, VerificationTarget[]>();
+    data.participants.verificationTargets
+      .filter((row) => row.targetProvince && row.targetProvince !== "未匹配")
+      .forEach((row) => byYear.set(row.year, [...(byYear.get(row.year) || []), row]));
+
+    const annualRows = [...byYear.entries()].sort(([a], [b]) => a.localeCompare(b));
+    return annualRows.map(([year, rows], yearIndex) => {
+      const volumeByInstitution = new Map<string, number>();
+      rows.forEach((row) => {
+        const key = `${row.institutionName}|${row.institutionUscc}`;
+        volumeByInstitution.set(key, (volumeByInstitution.get(key) || 0) + 1);
+      });
+      const institutions = new Set(volumeByInstitution.keys());
+      const previousInstitutions = new Set((annualRows[yearIndex - 1]?.[1] || []).map((row) => `${row.institutionName}|${row.institutionUscc}`));
+      const volumes = [...volumeByInstitution.values()].sort((a, b) => b - a);
+      const cr = (count: number) => rows.length
+        ? volumes.slice(0, count).reduce((sum, value) => sum + value, 0) / rows.length * 100
+        : 0;
+      const entrants = previousInstitutions.size === 0
+        ? institutions.size
+        : [...institutions].filter((institution) => !previousInstitutions.has(institution)).length;
+      const exits = previousInstitutions.size === 0
+        ? 0
+        : [...previousInstitutions].filter((institution) => !institutions.has(institution)).length;
+      let cumulative = 0;
+      const pareto = volumes.map((value) => {
+        cumulative += value;
+        return rows.length ? cumulative / rows.length * 100 : 0;
+      });
+      return {
+        year,
+        volume: rows.length,
+        institutions: institutions.size,
+        entrants,
+        exits,
+        cr5: cr(5),
+        cr10: cr(10),
+        cr20: cr(20),
+        pareto,
+      };
+    });
+  }, [data.participants.verificationTargets]);
+
+  const institutionChangeScale = Math.max(1, ...nationalAuditEvolution.flatMap((row) => [row.entrants, row.exits]));
+  const institutionCountChangeOption = useMemo<EChartsOption>(() => ({
+    animation: false,
+    tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, formatter: (params: unknown) => {
+      const rows = (Array.isArray(params) ? params : []) as { dataIndex?: number }[];
+      const row = nationalAuditEvolution[rows[0]?.dataIndex || 0];
+      return row ? `<strong>${row.year}年</strong><br/>技术服务机构：${exactNumber(row.institutions)} 家<br/>新进入：${exactNumber(row.entrants)} 家<br/>退出：${exactNumber(row.exits)} 家` : "";
+    } },
+    legend: { top: 2, textStyle: axisLabel },
+    grid: { left: 52, right: 48, top: 50, bottom: 38 },
+    xAxis: { type: "category", data: nationalAuditEvolution.map((row) => row.year), axisLine, axisTick: { show: false }, axisLabel: { ...axisLabel, formatter: (value: string) => `${value}年` } },
+    yAxis: [
+      { type: "value", name: "机构总数/家", minInterval: 1, axisLine, axisLabel, splitLine },
+      { type: "value", name: "新进入 / 退出", min: -institutionChangeScale, max: institutionChangeScale, minInterval: 1, axisLine, axisLabel, splitLine: { show: false } },
+    ],
+    series: [
+      { name: "新进入", type: "bar", yAxisIndex: 1, barMaxWidth: 22, data: nationalAuditEvolution.map((row) => row.entrants), itemStyle: { color: "#147d70" } },
+      { name: "退出", type: "bar", yAxisIndex: 1, barMaxWidth: 22, data: nationalAuditEvolution.map((row) => -row.exits), itemStyle: { color: "#9b4d5b" }, markLine: { symbol: "none", lineStyle: { color: "#71817c", type: "dashed" }, data: [{ yAxis: 0 }] } },
+      { name: "机构总数", type: "line", data: nationalAuditEvolution.map((row) => row.institutions), symbolSize: 7, lineStyle: { width: 2.5, color: "#1f5f8b" }, itemStyle: { color: "#1f5f8b" } },
+    ],
+  }), [institutionChangeScale, nationalAuditEvolution]);
+
+  const auditVolumeConcentrationOption = useMemo<EChartsOption>(() => ({
+    animation: false,
+    tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, formatter: (params: unknown) => {
+      const rows = (Array.isArray(params) ? params : []) as { dataIndex?: number }[];
+      const row = nationalAuditEvolution[rows[0]?.dataIndex || 0];
+      return row ? `<strong>${row.year}年</strong><br/>核查业务量：${exactNumber(row.volume)} 家<br/>CR5：${row.cr5.toFixed(1)}%<br/>CR10：${row.cr10.toFixed(1)}%<br/>CR20：${row.cr20.toFixed(1)}%` : "";
+    } },
+    legend: { top: 2, textStyle: axisLabel },
+    grid: { left: 56, right: 52, top: 50, bottom: 38 },
+    xAxis: { type: "category", data: nationalAuditEvolution.map((row) => row.year), axisLine, axisTick: { show: false }, axisLabel: { ...axisLabel, formatter: (value: string) => `${value}年` } },
+    yAxis: [
+      { type: "value", name: "核查业务量/家", min: 0, axisLine, axisLabel: { ...axisLabel, formatter: (value: number) => compactNumber(value, 0) }, splitLine },
+      { type: "value", name: "集中度", min: 0, max: 100, axisLine, axisLabel: { ...axisLabel, formatter: (value: number) => `${value}%` }, splitLine: { show: false } },
+    ],
+    series: [
+      { name: "核查业务量", type: "bar", barMaxWidth: 28, data: nationalAuditEvolution.map((row) => row.volume), itemStyle: { color: "#147d70" } },
+      { name: "CR5", type: "line", yAxisIndex: 1, data: nationalAuditEvolution.map((row) => Number(row.cr5.toFixed(2))), symbolSize: 6, lineStyle: { width: 2.2, color: "#1f5f8b" }, itemStyle: { color: "#1f5f8b" } },
+      { name: "CR10", type: "line", yAxisIndex: 1, data: nationalAuditEvolution.map((row) => Number(row.cr10.toFixed(2))), symbolSize: 6, lineStyle: { width: 2.2, color: "#ba8744" }, itemStyle: { color: "#ba8744" } },
+      { name: "CR20", type: "line", yAxisIndex: 1, data: nationalAuditEvolution.map((row) => Number(row.cr20.toFixed(2))), symbolSize: 6, lineStyle: { width: 2.2, color: "#9b4d5b" }, itemStyle: { color: "#9b4d5b" } },
+    ],
+  }), [nationalAuditEvolution]);
+
+  const marketParetoOption = useMemo<EChartsOption>(() => {
+    const colors = ["#147d70", "#1f5f8b", "#ba8744", "#9b4d5b", "#704b86", "#5f9ea0"];
+    const maximumRank = Math.max(0, ...nationalAuditEvolution.map((row) => row.pareto.length));
+    return {
+      animation: false,
+      tooltip: { trigger: "axis", formatter: (params: unknown) => {
+        const rows = (Array.isArray(params) ? params : []) as { axisValue?: string; seriesName?: string; value?: number }[];
+        const values = rows.filter((row) => row.value != null).map((row) => `${row.seriesName}：${Number(row.value).toFixed(1)}%`).join("<br/>");
+        return values ? `<strong>排名前 ${rows[0]?.axisValue || ""} 家机构</strong><br/>${values}` : "";
+      } },
+      legend: { orient: "vertical", right: 4, top: 18, textStyle: axisLabel, selectedMode: true },
+      grid: { left: 44, right: 112, top: 24, bottom: 42 },
+      xAxis: { type: "category", data: Array.from({ length: maximumRank }, (_, index) => String(index + 1)), axisLine, axisTick: { show: false }, axisLabel: { ...axisLabel, interval: "auto", formatter: (value: string) => value } },
+      yAxis: { type: "value", name: "累计市场占有率", min: 0, max: 100, axisLine, axisLabel: { ...axisLabel, formatter: (value: number) => `${value}%` }, splitLine },
+      series: nationalAuditEvolution.map((row, index) => ({
+        name: row.year,
+        type: "line" as const,
+        data: Array.from({ length: maximumRank }, (_, rank) => row.pareto[rank] == null ? null : Number(row.pareto[rank].toFixed(2))),
+        showSymbol: false,
+        connectNulls: false,
+        lineStyle: { width: 2.2, color: colors[index % colors.length] },
+        itemStyle: { color: colors[index % colors.length] },
+        endLabel: { show: true, formatter: row.year, color: colors[index % colors.length], fontSize: 10, fontWeight: 700, distance: 5 },
+        labelLayout: { moveOverlap: "shiftY" },
+      })),
+    };
+  }, [nationalAuditEvolution]);
+
   const participantRows = participantMode === "enterprise" ? participants?.keyEmitters || [] : participants?.verificationInstitutions || [];
   const participantYears = [...new Set(participantRows.map((row) => row.year))].sort().reverse();
   const participantProvinces = [...new Set(participantRows.map((row) => row.province).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-CN"));
@@ -1440,6 +1559,20 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
             <PanelTitle label="FIGURE 13" title="技术服务机构业务量情况" note="柱子为各机构服务的重点排放单位数量，堆积颜色表示被核查单位所在省份；右轴折线为累计市场占有率。点击柱子查看全国业务布局。" badge={relationshipBadge} controls={<div className="cea-filter-controls"><SelectControl label="年度" value={footprintYear} onChange={setFootprintYear} options={[{ value: "", label: "全部年度" }, ...yearOptions.slice().reverse()]} /><SelectControl label="技术服务机构" value={footprintLimit} onChange={setFootprintLimit} options={[{ value: "20", label: "TOP20" }, { value: "50", label: "TOP50" }, { value: "100", label: "TOP100" }, { value: "all", label: "全部" }]} /></div>} />
             <EChart option={institutionFootprintOption} className="cea-participant-chart cea-wide-participant-chart" ariaLabel="技术服务机构业务量及累计市场占有率" exportTitle="技术服务机构业务量情况" exportFileName={`FIGURE-13-${footprintYear || "全部年度"}-${footprintLimit}-技术服务机构业务量情况`} exportSections={exportSection("机构业务版图", footprintRows.map((row) => ({ 年度: row.year, 技术服务机构: row.institutionName, 被核查单位省份: row.targetProvince, 被核查单位: row.targetName, 行业: row.industry })))} onClick={(params) => { const index = Number(params.dataIndex); const row = shownFootprintStats[index]; if (row) openFootprintInstitution(row); }} />
           </article>
+          <div className="cea-participant-evolution-grid">
+            <article className="panel">
+              <PanelTitle label="FIGURE 13A" title="技术服务机构数量变化" note="首个公开业务年度的在册机构计为新进入；退出为相较上一公开年度不再出现的机构。" badge={relationshipBadge} />
+              <EChart option={institutionCountChangeOption} className="cea-participant-evolution-chart" ariaLabel="技术服务机构总数、新进入和退出数量变化" exportTitle="技术服务机构数量变化" exportFileName="FIGURE-13A-技术服务机构数量变化" exportSections={exportSection("年度机构数量变化", nationalAuditEvolution.map((row) => ({ 年度: row.year, 技术服务机构总数: row.institutions, 新进入: row.entrants, 退出: row.exits })))} />
+            </article>
+            <article className="panel">
+              <PanelTitle label="FIGURE 13B" title="核查业务量分布" note="柱子为公开机构—重点排放单位关系数；折线为业务量口径的前五、十、二十家机构集中度。" badge={relationshipBadge} />
+              <EChart option={auditVolumeConcentrationOption} className="cea-participant-evolution-chart" ariaLabel="年度核查业务量及CR5、CR10、CR20集中度" exportTitle="核查业务量分布" exportFileName="FIGURE-13B-核查业务量分布" exportSections={exportSection("年度核查业务量与集中度", nationalAuditEvolution.map((row) => ({ 年度: row.year, 核查业务量: row.volume, CR5: `${row.cr5.toFixed(2)}%`, CR10: `${row.cr10.toFixed(2)}%`, CR20: `${row.cr20.toFixed(2)}%` })))} />
+            </article>
+            <article className="panel">
+              <PanelTitle label="FIGURE 13C" title="市场集中度演变" note="每条线表示该年度按业务量排序后，排名前 x 家技术服务机构的累计市场占有率；右侧图例可开关年份。" badge={relationshipBadge} />
+              <EChart option={marketParetoOption} className="cea-participant-evolution-chart" ariaLabel="各年度技术服务机构累计市场占有率帕累托曲线" exportTitle="市场集中度演变" exportFileName="FIGURE-13C-市场集中度演变" exportSections={exportSection("年度帕累托集中度", nationalAuditEvolution.flatMap((row) => row.pareto.map((share, index) => ({ 年度: row.year, 机构排名: index + 1, 累计市场占有率: `${share.toFixed(2)}%` }))))} />
+            </article>
+          </div>
         </section>
 
         <section id="cea-data-sources" className="methodology-notes cea-methodology-notes" aria-labelledby="cea-data-sources-title">
