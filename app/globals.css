@@ -3156,6 +3156,10 @@ tbody tr:hover td {
   letter-spacing: 0;
 }
 
+.cea-structure-pair-label .select-control {
+  margin-left: auto;
+}
+
 .cea-structure-pair-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

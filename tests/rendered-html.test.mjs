@@ -381,10 +381,10 @@ test("adds a separate CEA view without replacing the CCER dashboard", async () =
   assert.match(ceaSource, /CEA—CCER月度价格比较/);
   assert.match(ceaSource, /本地与外地机构分配/);
   assert.match(ceaSource, /服务的重点排放单位/);
-  assert.match(ceaSource, /label="FIGURE 10E" title="不同规格CEA收盘价走势"/);
+  assert.match(ceaSource, /label="FIGURE 10E" title=\{`\$\{subjectStructurePeriodLabel\}不同规格CEA收盘价走势`\}/);
   assert.match(ceaSource, /累计市场占有率/);
   assert.match(ceaSource, /openFootprintInstitution/);
-  assert.match(ceaSource, /title="技术服务机构业务量情况"/);
+  assert.match(ceaSource, /\$\{footprintPeriodLabel\}\$\{footprintLimitLabel\}技术服务机构业务量情况/);
   assert.match(ceaSource, /title="技术服务机构数量变化"/);
   assert.match(ceaSource, /title="核查业务量分布"/);
   assert.match(ceaSource, /title="市场集中度演变"/);
@@ -392,6 +392,10 @@ test("adds a separate CEA view without replacing the CCER dashboard", async () =
   assert.match(ceaSource, /cr10: cr\(10\)/);
   assert.match(ceaSource, /cr20: cr\(20\)/);
   assert.match(ceaSource, /orient: "vertical", right: 4/);
+  assert.match(ceaSource, /const \[methodStructurePeriod, setMethodStructurePeriod\]/);
+  assert.match(ceaSource, /const \[subjectStructurePeriod, setSubjectStructurePeriod\]/);
+  assert.doesNotMatch(ceaSource, /const \[structurePeriod, setStructurePeriod\]/);
+  assert.match(ceaSource, /rank === 0 \? 0/);
   assert.match(ceaSource, /tradeCalendarText/);
   assert.doesNotMatch(ceaSource, /1,227个预期交易日/);
   assert.doesNotMatch(ceaSource, /PUBLIC LIST SNAPSHOT/);

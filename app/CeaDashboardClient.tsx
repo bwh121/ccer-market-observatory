@@ -544,7 +544,8 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
   const [coverageIndustryFilter, setCoverageIndustryFilter] = useState("");
   const [monthlyYear, setMonthlyYear] = useState("2026");
   const [heatYear, setHeatYear] = useState("2026");
-  const [structurePeriod, setStructurePeriod] = useState("all");
+  const [methodStructurePeriod, setMethodStructurePeriod] = useState("all");
+  const [subjectStructurePeriod, setSubjectStructurePeriod] = useState("all");
   const [participants, setParticipants] = useState<ParticipantData | null>(null);
   const [participantsLoading, setParticipantsLoading] = useState(false);
   const [participantsError, setParticipantsError] = useState("");
@@ -604,6 +605,12 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
 
   const yearOptions = ["2021", "2022", "2023", "2024", "2025", "2026"].map((year) => ({ value: year, label: `${year}年` }));
   const subjectOptions = data.subjects.map((row) => ({ value: row.code, label: row.label }));
+  const subjectLabel = subjectOptions.find((option) => option.value === subject)?.label || subject;
+  const methodStructurePeriodLabel = methodStructurePeriod === "all" ? "累计" : `${methodStructurePeriod}年`;
+  const subjectStructurePeriodLabel = subjectStructurePeriod === "all" ? "累计" : `${subjectStructurePeriod}年`;
+  const auditPeriodLabel = auditYear ? `${auditYear}年` : "全部年度";
+  const footprintPeriodLabel = footprintYear ? `${footprintYear}年` : "全部年度";
+  const footprintLimitLabel = footprintLimit === "all" ? "全部机构" : `TOP${footprintLimit}`;
   const selectedDaily = useMemo(
     () => data.daily.filter((row) => row.subject === subject),
     [data.daily, subject],
@@ -845,7 +852,7 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
     series: [{ type: "heatmap", coordinateSystem: "calendar", data: heatRows.map((row) => [row.date, row.totalVolume]) }],
   }), [heatRows, heatYear]);
 
-  const structureRows = selectedDaily.filter((row) => structurePeriod === "all" || row.date.startsWith(structurePeriod));
+  const structureRows = selectedDaily.filter((row) => methodStructurePeriod === "all" || row.date.startsWith(methodStructurePeriod));
   const methodStructure = data.tradeMethods.map((method) => {
     const volume = structureRows.reduce((total, row) => total + Number(row[`${method.key}Volume` as keyof DailyRow] || 0), 0);
     const amount = structureRows.reduce((total, row) => total + Number(row[`${method.key}Amount` as keyof DailyRow] || 0), 0);
@@ -854,7 +861,7 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
   const subjectStructure = data.subjects
     .filter((item) => item.code !== "COMCEA")
     .map((item) => {
-      const rows = data.daily.filter((row) => row.subject === item.code && (structurePeriod === "all" || row.date.startsWith(structurePeriod)));
+      const rows = data.daily.filter((row) => row.subject === item.code && (subjectStructurePeriod === "all" || row.date.startsWith(subjectStructurePeriod)));
       const volume = rows.reduce((total, row) => total + row.totalVolume, 0);
       const amount = rows.reduce((total, row) => total + row.totalAmount, 0);
       return { subject: item.code, volume, amount, averagePrice: volume > 0 ? amount / volume : null };
@@ -863,17 +870,17 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
   const subjectPriceStructure = data.subjects
     .filter((item) => item.code !== "COMCEA")
     .map((item) => {
-      const rows = data.daily.filter((row) => row.subject === item.code && (structurePeriod === "all" || row.date.startsWith(structurePeriod)));
+      const rows = data.daily.filter((row) => row.subject === item.code && (subjectStructurePeriod === "all" || row.date.startsWith(subjectStructurePeriod)));
       const volume = rows.reduce((total, row) => total + row.totalVolume, 0);
       const amount = rows.reduce((total, row) => total + row.totalAmount, 0);
       return { subject: item.code, volume, amount, averagePrice: volume > 0 ? amount / volume : null };
     });
   const subjectCloseTrend = useMemo(() => {
     const subjects = data.subjects.filter((item) => item.code !== "COMCEA");
-    const rows = data.daily.filter((row) => row.subject !== "COMCEA" && (structurePeriod === "all" || row.date.startsWith(structurePeriod)) && row.close != null && row.totalVolume > 0);
+    const rows = data.daily.filter((row) => row.subject !== "COMCEA" && (subjectStructurePeriod === "all" || row.date.startsWith(subjectStructurePeriod)) && row.close != null && row.totalVolume > 0);
     const dates = [...new Set(rows.map((row) => row.date))].sort();
     return { subjects, rows, dates };
-  }, [data.daily, data.subjects, structurePeriod]);
+  }, [data.daily, data.subjects, subjectStructurePeriod]);
 
   const methodStructureOption = useMemo<EChartsOption>(() => ({
     animation: false,
@@ -1138,7 +1145,7 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
         ? volumes.slice(0, count).reduce((sum, value) => sum + value, 0) / rows.length * 100
         : 0;
       const entrants = previousInstitutions.size === 0
-        ? institutions.size
+        ? 0
         : [...institutions].filter((institution) => !previousInstitutions.has(institution)).length;
       const exits = previousInstitutions.size === 0
         ? 0
@@ -1162,7 +1169,8 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
     });
   }, [data.participants.verificationTargets]);
 
-  const institutionChangeScale = Math.max(1, ...nationalAuditEvolution.flatMap((row) => [row.entrants, row.exits]));
+  const institutionAxisMin = -Math.max(1, ...nationalAuditEvolution.flatMap((row) => [row.entrants, row.exits]));
+  const institutionAxisMax = Math.max(1, ...nationalAuditEvolution.flatMap((row) => [row.institutions, row.entrants])) * 1.08;
   const institutionCountChangeOption = useMemo<EChartsOption>(() => ({
     animation: false,
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, formatter: (params: unknown) => {
@@ -1171,18 +1179,15 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
       return row ? `<strong>${row.year}年</strong><br/>技术服务机构：${exactNumber(row.institutions)} 家<br/>新进入：${exactNumber(row.entrants)} 家<br/>退出：${exactNumber(row.exits)} 家` : "";
     } },
     legend: { top: 2, textStyle: axisLabel },
-    grid: { left: 52, right: 48, top: 50, bottom: 38 },
+    grid: { left: 52, right: 28, top: 50, bottom: 38 },
     xAxis: { type: "category", data: nationalAuditEvolution.map((row) => row.year), axisLine, axisTick: { show: false }, axisLabel: { ...axisLabel, formatter: (value: string) => `${value}年` } },
-    yAxis: [
-      { type: "value", name: "机构总数/家", minInterval: 1, axisLine, axisLabel, splitLine },
-      { type: "value", name: "新进入 / 退出", min: -institutionChangeScale, max: institutionChangeScale, minInterval: 1, axisLine, axisLabel, splitLine: { show: false } },
-    ],
+    yAxis: { type: "value", name: "技术服务机构/家", min: institutionAxisMin, max: institutionAxisMax, minInterval: 1, axisLine, axisLabel, splitLine },
     series: [
-      { name: "新进入", type: "bar", yAxisIndex: 1, barMaxWidth: 22, data: nationalAuditEvolution.map((row) => row.entrants), itemStyle: { color: "#147d70" } },
-      { name: "退出", type: "bar", yAxisIndex: 1, barMaxWidth: 22, data: nationalAuditEvolution.map((row) => -row.exits), itemStyle: { color: "#9b4d5b" }, markLine: { symbol: "none", lineStyle: { color: "#71817c", type: "dashed" }, data: [{ yAxis: 0 }] } },
+      { name: "新进入", type: "bar", barWidth: "24%", barGap: "16%", barCategoryGap: "24%", data: nationalAuditEvolution.map((row) => row.entrants), itemStyle: { color: "#147d70" } },
+      { name: "退出", type: "bar", barWidth: "24%", barGap: "16%", barCategoryGap: "24%", data: nationalAuditEvolution.map((row) => -row.exits), itemStyle: { color: "#9b4d5b" }, markLine: { symbol: "none", lineStyle: { color: "#71817c", type: "dashed" }, data: [{ yAxis: 0 }] } },
       { name: "机构总数", type: "line", data: nationalAuditEvolution.map((row) => row.institutions), symbolSize: 7, lineStyle: { width: 2.5, color: "#1f5f8b" }, itemStyle: { color: "#1f5f8b" } },
     ],
-  }), [institutionChangeScale, nationalAuditEvolution]);
+  }), [institutionAxisMax, institutionAxisMin, nationalAuditEvolution]);
 
   const auditVolumeConcentrationOption = useMemo<EChartsOption>(() => ({
     animation: false,
@@ -1199,7 +1204,7 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
       { type: "value", name: "集中度", min: 0, max: 100, axisLine, axisLabel: { ...axisLabel, formatter: (value: number) => `${value}%` }, splitLine: { show: false } },
     ],
     series: [
-      { name: "核查业务量", type: "bar", barMaxWidth: 28, data: nationalAuditEvolution.map((row) => row.volume), itemStyle: { color: "#147d70" } },
+      { name: "核查业务量", type: "bar", barWidth: "40%", barCategoryGap: "40%", data: nationalAuditEvolution.map((row) => row.volume), itemStyle: { color: "#147d70" } },
       { name: "CR5", type: "line", yAxisIndex: 1, data: nationalAuditEvolution.map((row) => Number(row.cr5.toFixed(2))), symbolSize: 6, lineStyle: { width: 2.2, color: "#1f5f8b" }, itemStyle: { color: "#1f5f8b" } },
       { name: "CR10", type: "line", yAxisIndex: 1, data: nationalAuditEvolution.map((row) => Number(row.cr10.toFixed(2))), symbolSize: 6, lineStyle: { width: 2.2, color: "#ba8744" }, itemStyle: { color: "#ba8744" } },
       { name: "CR20", type: "line", yAxisIndex: 1, data: nationalAuditEvolution.map((row) => Number(row.cr20.toFixed(2))), symbolSize: 6, lineStyle: { width: 2.2, color: "#9b4d5b" }, itemStyle: { color: "#9b4d5b" } },
@@ -1218,12 +1223,12 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
       } },
       legend: { orient: "vertical", right: 4, top: 18, textStyle: axisLabel, selectedMode: true },
       grid: { left: 44, right: 112, top: 24, bottom: 42 },
-      xAxis: { type: "category", data: Array.from({ length: maximumRank }, (_, index) => String(index + 1)), axisLine, axisTick: { show: false }, axisLabel: { ...axisLabel, interval: "auto", formatter: (value: string) => value } },
+      xAxis: { type: "category", data: Array.from({ length: maximumRank + 1 }, (_, index) => String(index)), axisLine, axisTick: { show: false }, axisLabel: { ...axisLabel, interval: 0, formatter: (value: string) => Number(value) <= 100 && Number(value) % 10 === 0 ? value : "" } },
       yAxis: { type: "value", name: "累计市场占有率", min: 0, max: 100, axisLine, axisLabel: { ...axisLabel, formatter: (value: number) => `${value}%` }, splitLine },
       series: nationalAuditEvolution.map((row, index) => ({
         name: row.year,
         type: "line" as const,
-        data: Array.from({ length: maximumRank }, (_, rank) => row.pareto[rank] == null ? null : Number(row.pareto[rank].toFixed(2))),
+        data: Array.from({ length: maximumRank + 1 }, (_, rank) => rank === 0 ? 0 : row.pareto[rank - 1] == null ? null : Number(row.pareto[rank - 1].toFixed(2))),
         showSymbol: false,
         connectNulls: false,
         lineStyle: { width: 2.2, color: colors[index % colors.length] },
@@ -1431,11 +1436,11 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
           <SectionHeading index="01" eyebrow="MARKET COVERAGE" title="覆盖范围" description="区分官方配额管理口径与信息公开列表口径，并从年度、行业和地域观察覆盖边界。" />
           <div className="two-column-grid cea-coverage-grid">
             <article className="panel cea-coverage-panel">
-              <PanelTitle label="FIGURE 01A" title="重点排放单位地域分布" note={`按${coverageIndustryFilter || "全部行业"}公开记录计数；点击省份直接查看企业名单。`} controls={<div className="cea-filter-controls"><SelectControl label="公开名单年度" value={coverageYear} onChange={(value) => { setCoverageYear(value); setCoverageIndustryFilter(""); }} options={data.coverage.yearStats.map((row) => ({ value: row.year, label: `${row.year}年` })).reverse()} /><SelectControl label="行业" value={coverageIndustryFilter} onChange={setCoverageIndustryFilter} options={[{ value: "", label: "全部行业" }, ...coverageIndustryOptions]} /></div>} />
+              <PanelTitle label="FIGURE 01A" title={`${coverageYear}年${coverageIndustryFilter || "全部行业"}重点排放单位地域分布`} note={`按${coverageIndustryFilter || "全部行业"}公开记录计数；点击省份直接查看企业名单。`} controls={<div className="cea-filter-controls"><SelectControl label="公开名单年度" value={coverageYear} onChange={(value) => { setCoverageYear(value); setCoverageIndustryFilter(""); }} options={data.coverage.yearStats.map((row) => ({ value: row.year, label: `${row.year}年` })).reverse()} /><SelectControl label="行业" value={coverageIndustryFilter} onChange={setCoverageIndustryFilter} options={[{ value: "", label: "全部行业" }, ...coverageIndustryOptions]} /></div>} />
               {mapReady ? <EChart option={coverageMapOption} className="map-chart cea-coverage-map" ariaLabel={`${coverageYear}年${coverageIndustryFilter || "全部行业"}重点排放单位省级分布地图`} exportTitle="重点排放单位地域分布" exportFileName={`FIGURE-01A-${coverageYear}-${coverageIndustryFilter || "全部行业"}-重点排放单位地域分布`} exportSections={exportSection("省级重点排放单位", coverageRows.map((row) => ({ 年度: row.year, 行业: coverageIndustryFilter || "全部行业", 省份: row.province, 公开记录: row.records, 去重企业: row.uniqueEntities })))} onClick={(params) => { const mapName = String(params.name || ""); const row = coverageRows.find((item) => provinceMapName(item.province) === mapName); if (row) drillToParticipants(row.province); }} /> : <div className="chart-placeholder">地图加载中…</div>}
             </article>
             <article className="panel cea-coverage-panel">
-              <PanelTitle label="FIGURE 01B" title="重点排放单位行业分布" note={`${coverageYear}年公开名单，按企业记录数降序排列。`} />
+              <PanelTitle label="FIGURE 01B" title={`${coverageYear}年重点排放单位行业分布`} note={`${coverageYear}年公开名单，按企业记录数降序排列。`} />
               <EChart option={coverageIndustryOption} className="cea-industry-chart" ariaLabel={`${coverageYear}年重点排放单位行业分布`} exportTitle="重点排放单位行业分布" exportFileName={`FIGURE-01B-${coverageYear}-重点排放单位行业分布`} exportSections={exportSection("行业重点排放单位", coverageIndustryRows.map((row) => ({ 年度: row.year, 行业: row.industry, 公开记录: row.records })))} />
             </article>
           </div>
@@ -1452,17 +1457,17 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
         <section id="cea-trade" className="dashboard-section">
           <SectionHeading index="02" eyebrow="MARKET TRANSACTIONS" title="市场交易" description="从价格、成交方式、配额规格、换手率与跨市场价差观察全国CEA市场的交易结构。" />
           <article className="panel cea-full-width-panel">
-            <PanelTitle label="FIGURE 04" title={`CEA${priceView === "kline" ? "日K线" : "收盘价"}与分交易方式成交量`} note="价格使用左轴，挂牌协议、大宗协议和单向竞价成交量叠加在图底并使用右轴；无交易日期保持空白。" controls={<div className="cea-filter-controls"><SelectControl label="CEA规格" value={subject} onChange={setSubject} options={subjectOptions} /><SelectControl label="价格" value={priceView} onChange={(value) => setPriceView(value as "kline" | "close")} options={[{ value: "kline", label: "K线图" }, { value: "close", label: "收盘价" }]} /></div>} />
+            <PanelTitle label="FIGURE 04" title={`${subjectLabel}${priceView === "kline" ? "日K线" : "收盘价"}与分交易方式成交量`} note="价格使用左轴，挂牌协议、大宗协议和单向竞价成交量叠加在图底并使用右轴；无交易日期保持空白。" controls={<div className="cea-filter-controls"><SelectControl label="CEA规格" value={subject} onChange={setSubject} options={subjectOptions} /><SelectControl label="价格" value={priceView} onChange={(value) => setPriceView(value as "kline" | "close")} options={[{ value: "kline", label: "K线图" }, { value: "close", label: "收盘价" }]} /></div>} />
             <EChart option={klineOption} className="cea-kline-chart" ariaLabel={`CEA${priceView === "kline" ? "日K线" : "收盘价"}与三种交易方式成交量`} exportTitle={`CEA${priceView === "kline" ? "日K线" : "收盘价"}与分交易方式成交量`} exportFileName={`FIGURE-04-${subject}-${priceView === "kline" ? "日K线" : "收盘价"}-与成交量`} exportSections={klineExport} />
           </article>
 
           <div className="two-column-grid cea-trade-grid">
             <article className="panel">
-              <PanelTitle label="FIGURE 05" title="各年度成交均价与成交量" note="折线为三种交易方式成交均价，堆积柱为成交量。" />
+              <PanelTitle label="FIGURE 05" title={`${subjectLabel}各年度成交均价与成交量`} note="折线为三种交易方式成交均价，堆积柱为成交量。" />
               <EChart option={annualOption} className="trend-chart cea-large-chart" ariaLabel="各年度三种交易方式成交均价与成交量" exportTitle="各年度成交均价与成交量" exportFileName={`FIGURE-05-${subject}-年度均价与成交量`} exportSections={exportSection("年度分交易方式统计", annualRows.map((row) => ({ 年度: row.period, 标的: row.subject, 交易方式: row.method, 成交量: row.volume, 成交额: row.amount, 成交均价: row.averagePrice })))} />
             </article>
             <article className="panel">
-              <PanelTitle label="FIGURE 07" title={`${monthlyYear}年月度成交均价与成交量`} note="折线为三种交易方式成交均价，堆积柱为成交量。" controls={<SelectControl label="年度" value={monthlyYear} onChange={setMonthlyYear} options={yearOptions.slice().reverse()} />} />
+              <PanelTitle label="FIGURE 07" title={`${subjectLabel}${monthlyYear}年月度成交均价与成交量`} note="折线为三种交易方式成交均价，堆积柱为成交量。" controls={<SelectControl label="年度" value={monthlyYear} onChange={setMonthlyYear} options={yearOptions.slice().reverse()} />} />
               <EChart option={monthlyOption} className="trend-chart cea-large-chart" ariaLabel={`${monthlyYear}年CEA月度成交均价与成交量`} exportTitle="月度成交均价与成交量" exportFileName={`FIGURE-07-${subject}-${monthlyYear}月度均价与成交量`} exportSections={exportSection("月度分交易方式统计", monthlyRows.map((row) => ({ 月份: row.period, 标的: row.subject, 交易方式: row.method, 成交量: row.volume, 成交额: row.amount, 成交均价: row.averagePrice })))} />
             </article>
           </div>
@@ -1473,34 +1478,33 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
               <EChart option={turnoverOption} className="trend-chart cea-large-chart" ariaLabel="全国CEA市场年度换手率" exportTitle="年度市场换手率" exportFileName="FIGURE-06-年度市场换手率" exportSections={exportSection("年度换手率", data.turnoverByYear.map((row) => ({ 年度: row.year, 成交量_吨: row.volume, 总配额假设_吨: row.allowance, 换手率: row.turnoverRate })))} />
             </article>
             <article className="panel">
-              <PanelTitle label="FIGURE 08" title="各年度碳价走势对比" note="每年首个有收盘价的交易日＝100；2021年基期为7月16日开市首日。" />
+              <PanelTitle label="FIGURE 08" title={`${subjectLabel}各年度碳价走势对比`} note="每年首个有收盘价的交易日＝100；2021年基期为7月16日开市首日。" />
               <EChart option={normalizedOption} className="trend-chart cea-large-chart" ariaLabel="2021至2026年CEA价格标准化走势" exportTitle="各年度碳价走势对比" exportFileName={`FIGURE-08-${subject}-年度价格标准化`} exportSections={exportSection("标准化价格原始数据", selectedDaily.filter((row) => row.close != null).map((row) => ({ 日期: row.date, 标的: row.subject, 收盘价: row.close })))} />
             </article>
           </div>
 
           <article className="panel cea-full-width-panel">
-            <PanelTitle label="FIGURE 09" title="CEA交易量日历热力图" note="按交易日总成交量着色；选择年度比较履约期前后的活跃度。" controls={<SelectControl label="年度" value={heatYear} onChange={setHeatYear} options={yearOptions.slice().reverse()} />} />
+            <PanelTitle label="FIGURE 09" title={`${subjectLabel}${heatYear}年交易量日历热力图`} note="按交易日总成交量着色；选择年度比较履约期前后的活跃度。" controls={<SelectControl label="年度" value={heatYear} onChange={setHeatYear} options={yearOptions.slice().reverse()} />} />
             <EChart option={heatOption} className="cea-calendar-chart" ariaLabel={`${heatYear}年CEA交易量日历热力图`} exportTitle="CEA交易量日历热力图" exportFileName={`FIGURE-09-${subject}-${heatYear}交易量热力图`} exportSections={exportSection("日度成交量", heatRows.map((row) => ({ 日期: row.date, 标的: row.subject, 总成交量: row.totalVolume })))} />
           </article>
 
           <div className="cea-structure-heading">
-            <div><span>2.1</span><div><h3>交易结构</h3><p>统一选择累计或单个自然年度，四张图同步更新。</p></div></div>
-            <SelectControl label="统计周期" value={structurePeriod} onChange={setStructurePeriod} options={[{ value: "all", label: "累计" }, ...yearOptions.slice().reverse()]} />
+            <div><span>2.1</span><div><h3>交易结构</h3><p>分别从交易方式与配额规格观察全国碳配额的成交构成与价格差异。</p></div></div>
           </div>
           <div className="cea-structure-pairs">
             <div className="cea-structure-pair">
-              <div className="cea-structure-pair-label"><span>交易方式</span><small>成交量与成交均价</small></div>
+              <div className="cea-structure-pair-label"><span>交易方式</span><small>成交量与成交均价</small><SelectControl label="统计周期" value={methodStructurePeriod} onChange={setMethodStructurePeriod} options={[{ value: "all", label: "累计" }, ...yearOptions.slice().reverse()]} /></div>
               <div className="cea-structure-pair-grid">
-                <article className="panel"><PanelTitle label="FIGURE 10A" title="交易方式成交量占比" /><EChart option={methodStructureOption} className="cea-structure-chart" ariaLabel="三种交易方式成交量占比" exportTitle="交易方式成交量占比" exportFileName={`FIGURE-10A-${structurePeriod}-交易方式成交量占比`} exportSections={exportSection("交易方式结构", methodStructure.map((row) => ({ 交易方式: row.shortName, 成交量: row.volume, 成交额: row.amount, 平均价格: row.averagePrice })))} /></article>
-                <article className="panel"><PanelTitle label="FIGURE 10B" title="交易方式平均价格" /><EChart option={methodPriceOption} className="cea-structure-chart" ariaLabel="三种交易方式平均价格" exportTitle="交易方式平均价格" exportFileName={`FIGURE-10B-${structurePeriod}-交易方式平均价格`} exportSections={exportSection("交易方式平均价格", methodStructure.map((row) => ({ 交易方式: row.shortName, 平均价格: row.averagePrice })))} /></article>
+                <article className="panel"><PanelTitle label="FIGURE 10A" title={`${methodStructurePeriodLabel}交易方式成交量占比`} /><EChart option={methodStructureOption} className="cea-structure-chart" ariaLabel={`${methodStructurePeriodLabel}三种交易方式成交量占比`} exportTitle={`${methodStructurePeriodLabel}交易方式成交量占比`} exportFileName={`FIGURE-10A-${methodStructurePeriod}-交易方式成交量占比`} exportSections={exportSection("交易方式结构", methodStructure.map((row) => ({ 交易方式: row.shortName, 成交量: row.volume, 成交额: row.amount, 平均价格: row.averagePrice })))} /></article>
+                <article className="panel"><PanelTitle label="FIGURE 10B" title={`${methodStructurePeriodLabel}交易方式平均价格`} /><EChart option={methodPriceOption} className="cea-structure-chart" ariaLabel={`${methodStructurePeriodLabel}三种交易方式平均价格`} exportTitle={`${methodStructurePeriodLabel}交易方式平均价格`} exportFileName={`FIGURE-10B-${methodStructurePeriod}-交易方式平均价格`} exportSections={exportSection("交易方式平均价格", methodStructure.map((row) => ({ 交易方式: row.shortName, 平均价格: row.averagePrice })))} /></article>
               </div>
             </div>
             <div className="cea-structure-pair is-subject">
-              <div className="cea-structure-pair-label"><span>配额规格</span><small>不重复计入综合行情</small></div>
+              <div className="cea-structure-pair-label"><span>配额规格</span><small>不重复计入综合行情</small><SelectControl label="统计周期" value={subjectStructurePeriod} onChange={setSubjectStructurePeriod} options={[{ value: "all", label: "累计" }, ...yearOptions.slice().reverse()]} /></div>
               <div className="cea-structure-pair-grid">
-                <article className="panel"><PanelTitle label="FIGURE 10C" title="配额规格成交量占比" /><EChart option={subjectStructureOption} className="cea-structure-chart" ariaLabel="各CEA配额规格成交量占比" exportTitle="配额规格成交量占比" exportFileName={`FIGURE-10C-${structurePeriod}-配额规格成交量占比`} exportSections={exportSection("配额规格结构", subjectStructure.map((row) => ({ 配额规格: row.subject, 成交量: row.volume })))} /></article>
-                <article className="panel"><PanelTitle label="FIGURE 10D" title="配额规格成交均价" note="该周期内无成交时标注“无成交”。" /><EChart option={subjectPriceStructureOption} className="cea-structure-chart" ariaLabel="各CEA配额规格成交均价" exportTitle="配额规格成交均价" exportFileName={`FIGURE-10D-${structurePeriod}-配额规格成交均价`} exportSections={exportSection("配额规格成交均价", subjectPriceStructure.map((row) => ({ 配额规格: row.subject, 成交量: row.volume, 成交额: row.amount, 成交均价: row.averagePrice == null ? "无成交" : row.averagePrice })))} /></article>
-                <article className="panel"><PanelTitle label="FIGURE 10E" title="不同规格CEA收盘价走势" note="各规格收盘价；横轴仅标注月份。" /><EChart option={subjectCloseTrendOption} className="cea-structure-chart" ariaLabel="不同规格CEA收盘价走势" exportTitle="不同规格CEA收盘价走势" exportFileName={`FIGURE-10E-${structurePeriod}-不同规格CEA收盘价走势`} exportSections={exportSection("规格收盘价", subjectCloseTrend.rows.map((row) => ({ 日期: row.date, 配额规格: row.subject, 收盘价: row.close, 成交量: row.totalVolume })))} /></article>
+                <article className="panel"><PanelTitle label="FIGURE 10C" title={`${subjectStructurePeriodLabel}配额规格成交量占比`} /><EChart option={subjectStructureOption} className="cea-structure-chart" ariaLabel={`${subjectStructurePeriodLabel}各CEA配额规格成交量占比`} exportTitle={`${subjectStructurePeriodLabel}配额规格成交量占比`} exportFileName={`FIGURE-10C-${subjectStructurePeriod}-配额规格成交量占比`} exportSections={exportSection("配额规格结构", subjectStructure.map((row) => ({ 配额规格: row.subject, 成交量: row.volume })))} /></article>
+                <article className="panel"><PanelTitle label="FIGURE 10D" title={`${subjectStructurePeriodLabel}配额规格成交均价`} note="该周期内无成交时标注“无成交”。" /><EChart option={subjectPriceStructureOption} className="cea-structure-chart" ariaLabel={`${subjectStructurePeriodLabel}各CEA配额规格成交均价`} exportTitle={`${subjectStructurePeriodLabel}配额规格成交均价`} exportFileName={`FIGURE-10D-${subjectStructurePeriod}-配额规格成交均价`} exportSections={exportSection("配额规格成交均价", subjectPriceStructure.map((row) => ({ 配额规格: row.subject, 成交量: row.volume, 成交额: row.amount, 成交均价: row.averagePrice == null ? "无成交" : row.averagePrice })))} /></article>
+                <article className="panel"><PanelTitle label="FIGURE 10E" title={`${subjectStructurePeriodLabel}不同规格CEA收盘价走势`} note="各规格收盘价；横轴仅标注月份。" /><EChart option={subjectCloseTrendOption} className="cea-structure-chart" ariaLabel={`${subjectStructurePeriodLabel}不同规格CEA收盘价走势`} exportTitle={`${subjectStructurePeriodLabel}不同规格CEA收盘价走势`} exportFileName={`FIGURE-10E-${subjectStructurePeriod}-不同规格CEA收盘价走势`} exportSections={exportSection("规格收盘价", subjectCloseTrend.rows.map((row) => ({ 日期: row.date, 配额规格: row.subject, 收盘价: row.close, 成交量: row.totalVolume })))} /></article>
               </div>
             </div>
           </div>
@@ -1552,24 +1556,24 @@ function CeaDashboardReady({ data, mapReady, mapProvinceNames }: { data: CeaDash
 
           <div className="subsection-heading cea-subsection-heading"><span>3.1</span><div><h3>核查服务市场格局</h3><p>{pdfCoverage.publishReady ? `以下图表使用${pdfCoverageText}中提取并去重的${exactNumber(pdfCoverage.targets)}条核查对象关系；${sourcePdfExceptions}不进入关系图，更新未通过完整性门槛时会继续保留上一版数据。` : "PDF详情尚未达到全量发布门槛，关系图暂不形成全国性结论；自动更新会在完整性校验通过后开放。"}</p></div></div>
           <article className="panel cea-full-width-panel">
-            <PanelTitle label="FIGURE 12" title="各地区核查业务的本地与外地机构分配" note="100%堆积柱按本地机构占比降序排列；折线为前五家技术服务机构的业务集中度（CR5）。点击柱子查看机构名单。" badge={relationshipBadge} controls={<SelectControl label="年度" value={auditYear} onChange={setAuditYear} options={[{ value: "", label: "全部年度" }, ...yearOptions.slice().reverse()]} />} />
+            <PanelTitle label="FIGURE 12" title={`${auditPeriodLabel}各地区核查业务的本地与外地机构分配`} note="100%堆积柱按本地机构占比降序排列；折线为前五家技术服务机构的业务集中度（CR5）。点击柱子查看机构名单。" badge={relationshipBadge} controls={<SelectControl label="年度" value={auditYear} onChange={setAuditYear} options={[{ value: "", label: "全部年度" }, ...yearOptions.slice().reverse()]} />} />
             <EChart option={auditStructureOption} className="cea-participant-chart cea-wide-participant-chart" ariaLabel="各省份本地与外地技术服务机构业务占比及CR5" exportTitle="各地区核查业务的本地与外地机构分配" exportFileName={`FIGURE-12-${auditYear || "全部年度"}-核查机构结构`} exportSections={exportSection("核查关系", auditRows.map((row) => ({ 年度: row.year, 被核查单位省份: row.targetProvince, 核查机构: row.institutionName, 机构省份: row.institutionProvince, 本地机构: row.isLocal ? "是" : "否", 被核查单位: row.targetName })))} onClick={(params) => { const province = String(params.name || ""); if (province) void openAuditProvince(province); }} />
           </article>
           <article className="panel cea-full-width-panel">
-            <PanelTitle label="FIGURE 13" title="技术服务机构业务量情况" note="柱子为各机构服务的重点排放单位数量，堆积颜色表示被核查单位所在省份；右轴折线为累计市场占有率。点击柱子查看全国业务布局。" badge={relationshipBadge} controls={<div className="cea-filter-controls"><SelectControl label="年度" value={footprintYear} onChange={setFootprintYear} options={[{ value: "", label: "全部年度" }, ...yearOptions.slice().reverse()]} /><SelectControl label="技术服务机构" value={footprintLimit} onChange={setFootprintLimit} options={[{ value: "20", label: "TOP20" }, { value: "50", label: "TOP50" }, { value: "100", label: "TOP100" }, { value: "all", label: "全部" }]} /></div>} />
+            <PanelTitle label="FIGURE 13" title={`${footprintPeriodLabel}${footprintLimitLabel}技术服务机构业务量情况`} note="柱子为各机构服务的重点排放单位数量，堆积颜色表示被核查单位所在省份；右轴折线为累计市场占有率。点击柱子查看全国业务布局。" badge={relationshipBadge} controls={<div className="cea-filter-controls"><SelectControl label="年度" value={footprintYear} onChange={setFootprintYear} options={[{ value: "", label: "全部年度" }, ...yearOptions.slice().reverse()]} /><SelectControl label="技术服务机构" value={footprintLimit} onChange={setFootprintLimit} options={[{ value: "20", label: "TOP20" }, { value: "50", label: "TOP50" }, { value: "100", label: "TOP100" }, { value: "all", label: "全部" }]} /></div>} />
             <EChart option={institutionFootprintOption} className="cea-participant-chart cea-wide-participant-chart" ariaLabel="技术服务机构业务量及累计市场占有率" exportTitle="技术服务机构业务量情况" exportFileName={`FIGURE-13-${footprintYear || "全部年度"}-${footprintLimit}-技术服务机构业务量情况`} exportSections={exportSection("机构业务版图", footprintRows.map((row) => ({ 年度: row.year, 技术服务机构: row.institutionName, 被核查单位省份: row.targetProvince, 被核查单位: row.targetName, 行业: row.industry })))} onClick={(params) => { const index = Number(params.dataIndex); const row = shownFootprintStats[index]; if (row) openFootprintInstitution(row); }} />
           </article>
           <div className="cea-participant-evolution-grid">
             <article className="panel">
-              <PanelTitle label="FIGURE 13A" title="技术服务机构数量变化" note="首个公开业务年度的在册机构计为新进入；退出为相较上一公开年度不再出现的机构。" badge={relationshipBadge} />
+              <PanelTitle label="FIGURE 13A" title="技术服务机构数量变化" badge={relationshipBadge} />
               <EChart option={institutionCountChangeOption} className="cea-participant-evolution-chart" ariaLabel="技术服务机构总数、新进入和退出数量变化" exportTitle="技术服务机构数量变化" exportFileName="FIGURE-13A-技术服务机构数量变化" exportSections={exportSection("年度机构数量变化", nationalAuditEvolution.map((row) => ({ 年度: row.year, 技术服务机构总数: row.institutions, 新进入: row.entrants, 退出: row.exits })))} />
             </article>
             <article className="panel">
-              <PanelTitle label="FIGURE 13B" title="核查业务量分布" note="柱子为公开机构—重点排放单位关系数；折线为业务量口径的前五、十、二十家机构集中度。" badge={relationshipBadge} />
+              <PanelTitle label="FIGURE 13B" title="核查业务量分布" badge={relationshipBadge} />
               <EChart option={auditVolumeConcentrationOption} className="cea-participant-evolution-chart" ariaLabel="年度核查业务量及CR5、CR10、CR20集中度" exportTitle="核查业务量分布" exportFileName="FIGURE-13B-核查业务量分布" exportSections={exportSection("年度核查业务量与集中度", nationalAuditEvolution.map((row) => ({ 年度: row.year, 核查业务量: row.volume, CR5: `${row.cr5.toFixed(2)}%`, CR10: `${row.cr10.toFixed(2)}%`, CR20: `${row.cr20.toFixed(2)}%` })))} />
             </article>
             <article className="panel">
-              <PanelTitle label="FIGURE 13C" title="市场集中度演变" note="每条线表示该年度按业务量排序后，排名前 x 家技术服务机构的累计市场占有率；右侧图例可开关年份。" badge={relationshipBadge} />
+              <PanelTitle label="FIGURE 13C" title="市场集中度演变" badge={relationshipBadge} />
               <EChart option={marketParetoOption} className="cea-participant-evolution-chart" ariaLabel="各年度技术服务机构累计市场占有率帕累托曲线" exportTitle="市场集中度演变" exportFileName="FIGURE-13C-市场集中度演变" exportSections={exportSection("年度帕累托集中度", nationalAuditEvolution.flatMap((row) => row.pareto.map((share, index) => ({ 年度: row.year, 机构排名: index + 1, 累计市场占有率: `${share.toFixed(2)}%` }))))} />
             </article>
           </div>

@@ -1244,6 +1244,13 @@ function ChinaMaps({
   const [heatMetric, setHeatMetric] = useState<"registeredProjects" | "actualReduction">("registeredProjects");
   const [pointStatus, setPointStatus] = useState<"2" | "4">("2");
   const [pointMethods, setPointMethods] = useState<Set<string>>(() => new Set(data.methodologies));
+  const heatMetricLabel = heatMetric === "registeredProjects" ? "已登记项目数量" : "已登记减排量";
+  const pointStatusLabel = pointStatus === "2" ? "已登记项目" : "已登记减排量项目";
+  const pointMethodLabel = pointMethods.size === data.methodologies.length
+    ? "全部方法学领域"
+    : pointMethods.size === 1
+      ? [...pointMethods][0]
+      : `${pointMethods.size}个方法学领域`;
 
   useEffect(() => {
     let active = true;
@@ -1399,7 +1406,7 @@ function ChinaMaps({
       <article className="panel map-panel">
         <PanelTitle
           label="MAP 01"
-          title="省级分布热力图"
+          title={`${heatMetricLabel}省级分布热力图`}
           note="地图着色按已登记项目或已登记减排量汇总；点击省份查看按方法学分组的项目清单。"
           controls={
             <label className="select-control">
@@ -1451,7 +1458,7 @@ function ChinaMaps({
       <article className="panel map-panel">
         <PanelTitle
           label="MAP 02"
-          title="项目经纬度与方法学分布"
+          title={`${pointStatusLabel}经纬度与${pointMethodLabel}分布`}
           note={`${pointRows.length} 个项目坐标已纳入；右下角图例仅展示当前有项目的方法学领域。`}
           controls={
             <div className="map-filter-controls">
@@ -2576,6 +2583,11 @@ export default function DashboardClient() {
 
   const methodOptions = data.methodologies.map((methodology) => ({ value: methodology, label: methodology }));
   const statusOptions = data.statusOrder.map((status) => ({ value: status.code, label: status.name }));
+  const methodStatusLabel = methodStatusFilter.size === statusOptions.length
+    ? "全部项目状态"
+    : methodStatusFilter.size === 0
+      ? "未选择项目状态"
+      : statusOptions.filter((status) => methodStatusFilter.has(status.value)).map((status) => status.label).join("、");
   const qualificationRows = [...new Set(INSTITUTION_QUALIFICATIONS.map((row) => row.name))]
     .sort((a, b) => a.localeCompare(b, "zh-CN"))
     .map((name, index) => {
@@ -3113,7 +3125,7 @@ export default function DashboardClient() {
             <StatusFilterBar options={statusOptions} selected={methodStatusFilter} onChange={setMethodStatusFilter} />
             <div className="two-column-grid method-chart-grid">
             <article className="panel">
-              <PanelTitle label="FIGURE 04" title="各方法学项目数量（个）" note="按所选项目状态汇总并动态降序排列；点击横向柱查看项目。" />
+              <PanelTitle label="FIGURE 04" title={`${methodStatusLabel}下各方法学项目数量（个）`} note="按所选项目状态汇总并动态降序排列；点击横向柱查看项目。" />
               <EChart
                 option={methodCountOption}
                 className="method-chart"
@@ -3130,7 +3142,7 @@ export default function DashboardClient() {
               />
             </article>
             <article className="panel">
-              <PanelTitle label="FIGURE 05" title="各方法学预计年均减排量（tCO₂e）" note="按所选项目状态汇总并动态降序排列；柱尾展示汇总值。" />
+              <PanelTitle label="FIGURE 05" title={`${methodStatusLabel}下各方法学预计年均减排量（tCO₂e）`} note="按所选项目状态汇总并动态降序排列；柱尾展示汇总值。" />
               <EChart
                 option={methodExpectedOption}
                 className="method-chart"
@@ -3219,7 +3231,7 @@ export default function DashboardClient() {
             <article id="figure-08" className="panel figure-anchor">
               <PanelTitle
                 label="FIGURE 08"
-                title="项目登记日期分布"
+                title={`项目登记日期分布（按${projectRegistrationGranularity === "month" ? "月" : "日"}）`}
                 note={`双轴柱状图按${projectRegistrationGranularity === "month" ? "月" : "日"}汇总登记项目数量和预计年均减排量；横轴仅标注月份以保持清晰。`}
                 controls={
                   <label className="select-control">
@@ -3256,7 +3268,7 @@ export default function DashboardClient() {
             <article id="figure-09" className="panel figure-anchor">
               <PanelTitle
                 label="FIGURE 09"
-                title="减排量登记记录日期分布"
+                title={`减排量登记记录日期分布（按${reductionRegistrationGranularity === "day" ? "日" : "月"}）`}
                 note={`现有历史记录统一归入“2026-07-11 前”；其余记录按${reductionRegistrationGranularity === "day" ? "日" : "月"}展示。`}
                 controls={
                   <label className="select-control">
@@ -3515,7 +3527,7 @@ export default function DashboardClient() {
           <article className="panel wide-panel relation-panel">
             <PanelTitle
               label="FIGURE 10"
-              title="项目业主—审定与核查机构合作矩阵"
+              title={`项目业主—审定与核查机构合作矩阵（前${relationLimit}家业主 × 前${relationInstitutionLimit}家机构）`}
               note="横轴为高关联项目业主，纵轴为高关联机构；颜色越深表示双方合作项目越多。点击矩阵单元格查看相关项目。"
               controls={
                 <div className="relation-controls">
