@@ -376,10 +376,18 @@ const discoveredStatuses = [...new Map(
   .filter(([code]) => !knownStatusCodes.has(code))
   .sort((a, b) => a[0].localeCompare(b[0]));
 const statusOrder = [...STATUS_ORDER, ...discoveredStatuses].map(([code, name]) => ({ code, name }));
+const projectSnapshotIsFallback = (quality.errors || []).some((error) => (
+  typeof error === "string" && error.includes("refreshed from cache:") && error.includes("ccer.cets.org.cn")
+));
+const projectDataThrough = projectSnapshotIsFallback
+  ? previousDashboard?.projectDataThrough || previousDashboard?.dataThrough || ""
+  : tradeDataThrough;
 
 const dashboard = {
   generatedAt: quality.generated_at,
   dataThrough: tradeDataThrough,
+  projectDataThrough,
+  projectDataStatus: projectSnapshotIsFallback ? "last_validated_snapshot" : "fresh",
   tradeSummary,
   trades,
   carbonPriceComparison,

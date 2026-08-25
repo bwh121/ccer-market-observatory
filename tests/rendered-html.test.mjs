@@ -113,7 +113,8 @@ test("server-renders the CCER research dashboard shell", async () => {
   assert.doesNotMatch(dashboardSource, /from ["']next\/image["']/);
   assert.doesNotMatch(dashboardSource, /institutionSearch|输入机构名称/);
   assert.match(dashboardSource, /id="market-pulse-title">关键指标<\/h2>/);
-  assert.match(dashboardSource, /projectDataThrough = shiftDate\(snapshotDate, -1\)/);
+  assert.match(dashboardSource, /projectDataThrough = data\.projectDataThrough \|\| shiftDate\(snapshotDate, -1\)/);
+  assert.match(dashboardSource, /项目公开接口暂不可用，沿用最近通过校验的快照/);
   assert.match(dashboardSource, /已发布方法学数量/);
   assert.match(dashboardSource, /各状态项目数量与预计年均减排量/);
   assert.match(dashboardSource, /stack:\s*"project-count"/);
@@ -183,7 +184,8 @@ test("server-renders the CCER research dashboard shell", async () => {
     dashboardSource.indexOf("<section className=\"market-pulse\""),
     dashboardSource.indexOf("<section className=\"latest-news\""),
   );
-  assert.equal((pulseSource.match(/<KpiCard\b/g) || []).length, 7);
+  assert.equal((pulseSource.match(/<KpiCard\b/g) || []).length, 8);
+  assert.match(pulseSource, /label="最新收盘价"/);
   assert.doesNotMatch(pulseSource, /已登记项目预计计入期总减排量/);
   const table02Source = dashboardSource.slice(
     dashboardSource.indexOf('label="TABLE 02"'),

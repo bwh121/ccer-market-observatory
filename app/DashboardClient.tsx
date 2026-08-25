@@ -94,6 +94,8 @@ type Project = {
 type DashboardData = {
   generatedAt: string;
   dataThrough: string;
+  projectDataThrough?: string;
+  projectDataStatus?: "fresh" | "last_validated_snapshot";
   tradeSummary: {
     latestDate: string;
     latestPrice: number | null;
@@ -2586,7 +2588,7 @@ export default function DashboardClient() {
       };
     });
   const snapshotDate = data.generatedAt.slice(0, 10);
-  const projectDataThrough = shiftDate(snapshotDate, -1);
+  const projectDataThrough = data.projectDataThrough || shiftDate(snapshotDate, -1);
   const bulletinRange = bulletinPeriodRange(snapshotDate, bulletinPeriod);
   const bulletinRangeLabel = bulletinPeriodLabel(snapshotDate, bulletinPeriod);
   const isInBulletinRange = (date: string) => (
@@ -2815,7 +2817,10 @@ export default function DashboardClient() {
               <div className="eyebrow">MARKET AT A GLANCE</div>
               <h2 id="market-pulse-title">关键指标</h2>
             </div>
-            <p>项目与减排量数据截至 {projectDataThrough}，交易数据截至 {data.tradeSummary.latestDate}</p>
+            <p>
+              项目与减排量数据截至 {projectDataThrough}，交易数据截至 {data.tradeSummary.latestDate}
+              {data.projectDataStatus === "last_validated_snapshot" ? "（项目公开接口暂不可用，沿用最近通过校验的快照）" : ""}
+            </p>
           </div>
           <div className="market-pulse-grid">
             <KpiCard label="已发布方法学数量" value={exactNumber(data.methodologies.length, 0)} unit="项" tone="ink" />
